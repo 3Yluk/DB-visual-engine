@@ -28,7 +28,14 @@ import {
     AlertCircle,
     Activity,
     Save,
-    Cpu
+    Cpu,
+    ArrowRight,
+    ChevronDown,
+    Check,
+    Edit2,
+    Copy,
+    Trash2,
+    CheckCircle
 } from 'lucide-react';
 
 export const Icons = {
@@ -60,5 +67,12 @@ export const Icons = {
     AlertCircle,
     Activity,
     Save,
-    Cpu
+    Cpu,
+    ArrowRight,
+    ChevronDown,
+    Check,
+    Edit2,
+    Copy,
+    Trash2,
+    CheckCircle: CheckCircle2
 };

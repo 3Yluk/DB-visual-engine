@@ -50,20 +50,20 @@ export interface AppState {
   generatedImage: string | null;
   generatedImages: string[];
   isGeneratingImage: boolean;
-  
+
   // Prompt Studio State
   editablePrompt: string;
   promptHistory: string[];
   currentPromptIndex: number;
   isRefiningPrompt: boolean;
   useReferenceImage: boolean;
-  
+
   // Translation Cache
   promptCache: {
     CN: string;
     EN: string;
   };
-  
+
   isTemplatizing: boolean;
   detectedAspectRatio: string;
   videoAnalysisDuration: number | null;
@@ -79,3 +79,19 @@ export interface AppState {
 }
 
 export type AgentPromptGenerator = (previousContext: string) => string;
+
+// Chat/Skill System Types
+export type SkillType = 'quality-check' | 'reverse' | 'translate' | 'refine' | 'generate';
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'skill-result';
+  content: string;
+  timestamp: number;
+  isStreaming?: boolean;
+  // Skill result specific
+  skillType?: SkillType;
+  suggestions?: string[];
+  selectedIndices?: number[];
+  applied?: boolean;
+}

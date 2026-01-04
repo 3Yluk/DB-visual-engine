@@ -14,7 +14,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
   const [base64Data, setBase64Data] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState<string>("16:9");
   const [mimeType, setMimeType] = useState<string>("");
-  const [customDuration, setCustomDuration] = useState<string>(""); 
+  const [customDuration, setCustomDuration] = useState<string>("");
 
   const calculateNearestRatio = (width: number, height: number): string => {
     const ratio = width / height;
@@ -47,27 +47,38 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
         setMimeType(file.type);
 
         if (file.type.startsWith('image/')) {
-            const img = new Image();
-            img.onload = () => {
-               const ratio = calculateNearestRatio(img.naturalWidth, img.naturalHeight);
-               setAspectRatio(ratio);
-            };
-            img.src = base64String;
+          const img = new Image();
+          img.onload = () => {
+            const ratio = calculateNearestRatio(img.naturalWidth, img.naturalHeight);
+            setAspectRatio(ratio);
+          };
+          img.src = base64String;
         } else if (file.type.startsWith('video/')) {
-            const vid = document.createElement('video');
-            vid.onloadedmetadata = () => {
-                const ratio = calculateNearestRatio(vid.videoWidth, vid.videoHeight);
-                setAspectRatio(ratio);
-                if (vid.duration < 60) {
-                    setCustomDuration(Math.ceil(vid.duration).toString());
-                }
-            };
-            vid.src = base64String;
+          const vid = document.createElement('video');
+          vid.onloadedmetadata = () => {
+            const ratio = calculateNearestRatio(vid.videoWidth, vid.videoHeight);
+            setAspectRatio(ratio);
+            if (vid.duration < 60) {
+              setCustomDuration(Math.ceil(vid.duration).toString());
+            }
+          };
+          vid.src = base64String;
         }
       };
       reader.readAsDataURL(file);
     }
   };
+
+  // Auto-submit images when ready
+  useEffect(() => {
+    if (preview && base64Data && mimeType.startsWith('image/')) {
+      // Short timeout to allow state to settle, then submit
+      const timer = setTimeout(() => {
+        onImageSelected(base64Data, aspectRatio, mimeType);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [preview, base64Data, mimeType, aspectRatio, onImageSelected]);
 
   // 粘贴功能实现
   useEffect(() => {
@@ -129,43 +140,43 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
     return (
       <div className="relative w-full flex-1 min-h-[400px] rounded-3xl overflow-hidden border border-stone-200 bg-stone-50 animate-in fade-in zoom-in-95 duration-500">
         {isVideo ? (
-            <video src={preview} className="w-full h-full object-contain" muted loop autoPlay />
+          <video src={preview} className="w-full h-full object-contain" muted loop autoPlay />
         ) : (
-            <img src={preview} alt="Preview" className="w-full h-full object-contain" />
+          <img src={preview} alt="Preview" className="w-full h-full object-contain" />
         )}
         <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center gap-6 backdrop-blur-[2px]">
-           {isVideo && (
-              <div className="flex flex-col items-center gap-2">
-                 <span className="text-[10px] font-bold text-white uppercase tracking-widest">分析时长 (s)</span>
-                 <input 
-                    type="number" 
-                    value={customDuration}
-                    onChange={(e) => setCustomDuration(e.target.value)}
-                    className="bg-white/10 text-white text-center rounded-xl px-4 py-2 w-24 text-sm border border-white/20 outline-none focus:bg-white/20 transition-all"
-                 />
-              </div>
-           )}
-           <button 
-             onClick={handleStartAnalysis}
-             disabled={disabled}
-             className="bg-white text-black px-10 py-4 rounded-2xl font-bold text-sm hover:bg-orange-500 hover:text-white flex items-center gap-3 shadow-2xl transition-all active:scale-95"
-           >
-             {isVideo ? <Icons.Film size={18} /> : <Icons.Sparkles size={18} />}
-             {isVideo ? "开始视频流解析" : "启动资产扫描"}
-           </button>
-           <button 
-             onClick={handleClear}
-             className="text-white/60 text-xs hover:text-white hover:underline flex items-center gap-1.5 font-medium transition-colors"
-           >
-             <Icons.X size={14} /> 更换参考文件 (或直接粘贴)
-           </button>
+          {isVideo && (
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-[10px] font-bold text-white uppercase tracking-widest">分析时长 (s)</span>
+              <input
+                type="number"
+                value={customDuration}
+                onChange={(e) => setCustomDuration(e.target.value)}
+                className="bg-white/10 text-white text-center rounded-xl px-4 py-2 w-24 text-sm border border-white/20 outline-none focus:bg-white/20 transition-all"
+              />
+            </div>
+          )}
+          <button
+            onClick={handleStartAnalysis}
+            disabled={disabled}
+            className="bg-white text-black px-10 py-4 rounded-2xl font-bold text-sm hover:bg-orange-500 hover:text-white flex items-center gap-3 shadow-2xl transition-all active:scale-95"
+          >
+            {isVideo ? <Icons.Film size={18} /> : <Icons.Sparkles size={18} />}
+            {isVideo ? "开始视频流解析" : "启动资产扫描"}
+          </button>
+          <button
+            onClick={handleClear}
+            className="text-white/60 text-xs hover:text-white hover:underline flex items-center gap-1.5 font-medium transition-colors"
+          >
+            <Icons.X size={14} /> 更换参考文件 (或直接粘贴)
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div 
+    <div
       className={`
         relative group cursor-pointer transition-all duration-500
         border-2 border-dashed rounded-3xl flex-1 min-h-[400px] flex flex-col items-center justify-center
@@ -178,14 +189,14 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
       onDrop={handleDrop}
     >
       <input type="file" ref={inputRef} onChange={handleChange} accept="image/*,video/*" className="hidden" disabled={disabled} />
-      
+
       <div className="w-20 h-20 rounded-full bg-stone-50 flex items-center justify-center text-stone-300 mb-6 group-hover:scale-110 group-hover:text-orange-500 transition-all duration-500">
         <Icons.Upload size={32} />
       </div>
       <div className="text-center space-y-2 px-10">
         <h3 className="text-lg font-serif font-bold text-stone-800">拖入、点击或粘贴参考资产</h3>
         <p className="text-xs text-stone-400 font-medium leading-relaxed">
-          支持高保真图像或 Sora 级短视频解析 (MAX 20MB)<br/>
+          支持高保真图像或 Sora 级短视频解析 (MAX 20MB)<br />
           <span className="text-stone-300 mt-2 block italic">粘贴快捷键: Ctrl+V / Cmd+V</span>
         </p>
       </div>

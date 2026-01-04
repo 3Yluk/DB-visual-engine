@@ -1,9 +1,22 @@
 
-import OpenAI from 'openai';
-import { AGENTS } from "../constants";
+import { GoogleGenAI } from "@google/genai";
+import { AGENTS, SINGLE_STEP_REVERSE_PROMPT } from "../constants";
 import { AgentRole, LayoutElement } from "../types";
+import { promptManager } from "./promptManager";
 
-let client: OpenAI | null = null;
+export interface ReverseEngineeringResult {
+  image_analysis: {
+    subject: string;
+    environment: string;
+    lighting: string;
+    technical_specs: string;
+    colors: string;
+  };
+  generated_prompt: string;
+  negative_prompt: string;
+}
+
+let ai: GoogleGenAI | null = null;
 let currentConfig = { apiKey: '', baseUrl: '' };
 
 // Default Model Configuration
@@ -15,23 +28,27 @@ let modelConfig = {
 
 const isQuotaError = (error: any): boolean => {
   const msg = error?.toString() || "";
-  return msg.includes("429") || msg.includes("quota") || msg.includes("limit") || msg.includes("insufficient_quota");
+  return msg.includes("429") || msg.includes("quota") || msg.includes("limit");
 };
 
 export const configureClient = (apiKey: string, baseUrl: string) => {
   if (!apiKey || !baseUrl) return;
+  currentConfig = { apiKey, baseUrl };
 
-  // Robustness: Ensure baseUrl ends with /v1 to match local proxy requirements
+  // Google SDK expects the base API root (e.g. http://127.0.0.1:8045)
+  // Strip trailing /v1 if present
   let finalUrl = baseUrl;
-  if (!finalUrl.includes('/v1')) {
-    finalUrl = finalUrl.endsWith('/') ? `${finalUrl}v1` : `${finalUrl}/v1`;
+  if (finalUrl.endsWith('/v1')) {
+    finalUrl = finalUrl.substring(0, finalUrl.length - 3);
+  } else if (finalUrl.endsWith('/v1/')) {
+    finalUrl = finalUrl.substring(0, finalUrl.length - 4);
   }
 
-  currentConfig = { apiKey, baseUrl: finalUrl };
-  client = new OpenAI({
+  ai = new GoogleGenAI({
     apiKey: apiKey,
-    baseURL: finalUrl,
-    dangerouslyAllowBrowser: true
+    httpOptions: {
+      baseUrl: finalUrl
+    }
   });
 };
 
@@ -44,125 +61,117 @@ export const configureModels = (config: { reasoning?: string; fast?: string; ima
 };
 
 const initModelsFromStorage = () => {
-  const r = localStorage.getItem('DB_model_reasoning');
-  const f = localStorage.getItem('DB_model_fast');
-  const i = localStorage.getItem('DB_model_image');
+  const r = localStorage.getItem('berryxia_model_reasoning');
+  const f = localStorage.getItem('berryxia_model_fast');
+  const i = localStorage.getItem('berryxia_model_image');
   if (r || f || i) {
     configureModels({ reasoning: r || undefined, fast: f || undefined, image: i || undefined });
   }
 };
 
-// Initialize with env vars if available (Client)
+// Initialize with env vars if available
 if (process.env.GEMINI_API_KEY && process.env.API_ENDPOINT) {
   configureClient(process.env.GEMINI_API_KEY, process.env.API_ENDPOINT);
 }
-// Initialize models from storage
 initModelsFromStorage();
 
-
 const getClient = () => {
-  if (!client) {
-    // Try to recover from localStorage if not initialized (fallback)
-    const storedKey = localStorage.getItem('DB_api_key');
-    const storedUrl = localStorage.getItem('DB_base_url');
+  if (!ai) {
+    const storedKey = localStorage.getItem('berryxia_api_key');
+    const storedUrl = localStorage.getItem('berryxia_base_url');
     if (storedKey && storedUrl) {
       configureClient(storedKey, storedUrl);
     }
   }
-  if (!client) throw new Error("API Client not configured. Please set API Key and Endpoint.");
-  return client;
+  if (!ai) throw new Error("Google AI Client not configured. Please set API Key and Endpoint.");
+  return ai;
+};
+
+// Helper: Get agent prompt from localStorage or fallback to default
+// Helper: Get agent prompt from promptManager
+export const getAgentPrompt = (role: AgentRole): string => {
+  return promptManager.getActivePromptContent(role, AGENTS[role].systemInstruction);
 };
 
 export async function* streamAgentAnalysis(
   role: AgentRole,
   imageBase64: string,
-  previousContext: string
+  previousContext: string,
+  mimeType: string = "image/jpeg"
 ) {
-  const openai = getClient();
+  const client = getClient();
   const agent = AGENTS[role];
+  const modelId = modelConfig.reasoning;
 
-  // Use Reasoning model for smart agents
-  const model = modelConfig.reasoning;
+  // Get prompt from localStorage or default
+  const systemPrompt = getAgentPrompt(role);
 
   const fullPrompt = `
-    ${agent.systemInstruction}
+    ${systemPrompt}
     ---
     ${previousContext ? `以下是前序分析步骤的上下文汇总：\n${previousContext}` : "这是流水线的第一阶段。"}
   `;
 
   try {
-    const stream = await openai.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: fullPrompt },
-            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
-          ]
-        }
-      ],
-      stream: true,
+    const cleanImage = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+    console.log(`[DEBUG] Model: ${modelId}, MimeType: ${mimeType}, ImgLen: ${cleanImage.length}`);
+
+    // per SDK docs: ai.models.generateContentStream with contents as array of parts or simple string
+    const response = await client.models.generateContentStream({
+      model: modelId,
+      contents: [
+        { inlineData: { mimeType, data: cleanImage } },
+        fullPrompt
+      ]
     });
 
-    for await (const chunk of stream) {
-      console.log(`[DEBUG] Agent ${role} chunk:`, JSON.stringify(chunk));
-      const delta = chunk.choices[0]?.delta;
-      const legacyText = (chunk.choices[0] as any)?.text;
-      const content = delta?.content || legacyText || "";
-      if (content) yield content;
+    for await (const chunk of response) {
+      const text = chunk.text;
+      if (text) yield text;
     }
   } catch (error) {
     console.error(`Agent ${role} error:`, error);
-    if (isQuotaError(error)) yield `\n\n[⚠️ 配额限制]：请求过载或额度不足。`;
+    if (isQuotaError(error)) yield `\n\n[⚠️ 配额限制]：请求过载。`;
     else yield `\n\n[错误]：引擎在 ${role} 阶段异常 (${error})。`;
   }
 }
 
 export async function translatePrompt(text: string, targetLang: 'CN' | 'EN'): Promise<string> {
-  const openai = getClient();
-  // Use Fast model for utility tasks
-  const model = modelConfig.fast;
+  const client = getClient();
+  const modelId = modelConfig.fast;
 
   const prompt = targetLang === 'EN'
     ? `Translate this 7-layer prompt into professional English for Midjourney/Stable Diffusion. Keep the Markdown structure exactly same.\n\n${text}`
     : `将此 7 层架构提示词翻译为中文，保持 Markdown 标题结构：\n\n${text}`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: [{ role: "user", content: prompt }]
+    const response = await client.models.generateContent({
+      model: modelId,
+      contents: prompt
     });
-    return response.choices[0]?.message?.content || text;
+    return response.text || text;
   } catch (error) {
     console.error("Translate error:", error);
     return text;
   }
 }
 
-export async function detectLayout(imageBase64: string): Promise<LayoutElement[]> {
-  const openai = getClient();
-  // Use Fast model for layout
-  const model = modelConfig.fast;
-
+export async function detectLayout(imageBase64: string, mimeType: string = "image/jpeg"): Promise<LayoutElement[]> {
+  const client = getClient();
+  const modelId = modelConfig.fast;
   const prompt = "Detect all major visual elements in this image and return their 2D bounding boxes and hierarchy labels (Primary, Secondary, Graphic). Return ONLY valid JSON array.";
 
   try {
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
-          ]
-        }
-      ],
-      response_format: { type: "json_object" }
+    const cleanImage = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    const response = await client.models.generateContent({
+      model: modelId,
+      contents: [
+        { inlineData: { mimeType, data: cleanImage } },
+        prompt
+      ]
     });
-    const content = response.choices[0]?.message?.content || "[]";
-    // Handle potential markdown backticks wrapping json
+    const content = response.text || "[]";
     const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanContent);
   } catch (e) {
@@ -172,101 +181,180 @@ export async function detectLayout(imageBase64: string): Promise<LayoutElement[]
 }
 
 export async function* streamConsistencyCheck(originalImage: string, generatedImage: string) {
-  const openai = getClient();
-  // QA needs good vision -> Reasoning model
-  const model = modelConfig.reasoning;
-
+  const client = getClient();
+  const modelId = modelConfig.reasoning;
   const prompt = `${AGENTS[AgentRole.CRITIC].systemInstruction}\n\nCompare Source vs Replica.`;
-  try {
-    const stream = await openai.chat.completions.create({
-      model: model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${originalImage}` } },
-            { type: "image_url", image_url: { url: `data:image/png;base64,${generatedImage}` } } // Generated image might be PNG
-          ]
-        }
-      ],
-      stream: true
-    });
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || "";
-      if (content) yield content;
+  try {
+    const cleanOriginal = originalImage.replace(/^data:image\/\w+;base64,/, "");
+    const cleanGenerated = generatedImage.replace(/^data:image\/\w+;base64,/, "");
+
+    const response = await client.models.generateContentStream({
+      model: modelId,
+      contents: [
+        { inlineData: { mimeType: "image/jpeg", data: cleanOriginal } },
+        { inlineData: { mimeType: "image/png", data: cleanGenerated } },
+        prompt
+      ]
+    });
+    for await (const chunk of response) {
+      const text = chunk.text;
+      if (text) yield text;
     }
   } catch (error) { yield "质检不可用。"; }
 }
 
-export async function refinePromptWithFeedback(originalPrompt: string, feedback: string): Promise<string> {
-  const openai = getClient();
-  // Use Fast model for simple text refinement
-  const model = modelConfig.fast;
+export async function refinePromptWithFeedback(
+  originalPrompt: string,
+  feedback: string,
+  refImage?: string | null,
+  mimeType: string = "image/jpeg"
+): Promise<string> {
+  const client = getClient();
+  const modelId = modelConfig.fast;
+  const textPrompt = `你是一个提示词优化专家。根据用户的修改意见，结合现有提示词${refImage ? "和参考图片" : ""}，输出改进后的完整提示词。
 
-  const prompt = `Refine the following 7-layer prompt based on this feedback:\n${feedback}\n\nOriginal Prompt:\n${originalPrompt}`;
+**用户修改意见：**
+${feedback}
+
+**现有提示词：**
+${originalPrompt}
+
+**要求：**  
+1. 仅输出修改后的提示词，不需要解释
+2. 保持原有的结构格式
+3. 根据修改意见进行针对性调整`;
+
   try {
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: [{ role: "user", content: prompt }]
-    });
-    return response.choices[0]?.message?.content || originalPrompt;
-  } catch (error) { return originalPrompt; }
+    let response;
+    if (refImage) {
+      const cleanRef = refImage.replace(/^data:image\/\w+;base64,/, "");
+      response = await client.models.generateContent({
+        model: modelId,
+        contents: [
+          { inlineData: { mimeType, data: cleanRef } },
+          textPrompt
+        ]
+      });
+    } else {
+      response = await client.models.generateContent({ model: modelId, contents: textPrompt });
+    }
+    return response.text || originalPrompt;
+  } catch (error) {
+    console.error("Refine prompt error:", error);
+    return originalPrompt;
+  }
 }
 
 export async function generateImageFromPrompt(promptContext: string, aspectRatio: string, refImage?: string | null, mimeType: string = "image/jpeg"): Promise<string | null> {
-  const openai = getClient();
-  // Use Image model
-  const model = modelConfig.image;
+  const client = getClient();
 
-  // Map aspect ratio to standard sizes
-  const sizeMap: Record<string, string> = {
-    "1:1": "1024x1024",
-    "16:9": "1280x720",
-    "9:16": "720x1280",
-    "4:3": "1216x896",
-    "3:4": "896x1216"
+  // Parse aspect ratio from prompt text (user may have edited it)
+  const parseAspectRatioFromPrompt = (prompt: string): string => {
+    // Look for --ar X:Y format (Midjourney style)
+    const arMatch = prompt.match(/--ar\s+(\d+):(\d+)/i);
+    if (arMatch) {
+      const w = parseInt(arMatch[1]);
+      const h = parseInt(arMatch[2]);
+      if (w > h) return "16:9";
+      if (h > w) return "9:16";
+      return "1:1";
+    }
+    // Look for "Aspect Ratio: X:Y" format
+    const aspectMatch = prompt.match(/aspect\s*ratio[:\s]+(\d+):(\d+)/i);
+    if (aspectMatch) {
+      const w = parseInt(aspectMatch[1]);
+      const h = parseInt(aspectMatch[2]);
+      if (w > h) return "16:9";
+      if (h > w) return "9:16";
+      return "1:1";
+    }
+    return aspectRatio; // fallback to detected ratio
   };
-  const size = sizeMap[aspectRatio] || "1024x1024";
 
-  const messages: any[] = [{ role: "user", content: promptContext }];
+  const detectedRatio = parseAspectRatioFromPrompt(promptContext);
 
-  // Note: The extra_body protocol provided doesn't explicitly mention how refImage is passed in chat completion
-  // but typically for multimodal models it would be an image_url content part.
-  // However, if the user protocol is strict about chat.completions.create just for generation commands,
-  // we follow the text prompting structure. 
-  // If refImage is needed, we would add it to messages content array.
+  // Select model variant based on aspect ratio
+  const baseModel = modelConfig.image; // e.g., "gemini-3-pro-image"
+  let modelId = baseModel;
 
-  if (refImage) {
-    messages[0].content = [
-      { type: "text", text: promptContext },
-      { type: "image_url", image_url: { url: `data:${mimeType};base64,${refImage}` } }
-    ];
+  if (detectedRatio === "16:9" || detectedRatio === "4:3") {
+    // Use 16x9 variant for wide formats
+    modelId = baseModel.includes("-4k") ? `${baseModel.replace("-4k", "")}-4k-16x9` : `${baseModel}-16x9`;
+  } else if (detectedRatio === "9:16" || detectedRatio === "3:4") {
+    // Use 9x16 variant for tall formats
+    modelId = baseModel.includes("-4k") ? `${baseModel.replace("-4k", "")}-4k-9x16` : `${baseModel}-9x16`;
   }
+  // else: 1:1 uses base model
+
+  console.log(`[Image Gen] Detected ratio: ${detectedRatio}, Using model: ${modelId}`);
 
   try {
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: messages,
-      // @ts-ignore - OpenAI types might not know about extra_body strictly yet or generic enough
-      extra_body: { size: size }
-    });
+    let response;
 
-    const content = response.choices[0]?.message?.content;
-
-    // Post-process: try to extract base64 or url if it's wrapped in markdown or just raw
-    if (!content) return null;
-
-    // If content is a URL, we might need to fetch it to get base64 for our app display 
-    // (since our app uses base64 for local preview mostly).
-    if (content.startsWith("http")) {
-      return null; // TODO: Implement URL to Base64 if needed, or hope proxy returns Base64.
+    if (refImage) {
+      const cleanRef = refImage.replace(/^data:image\/\w+;base64,/, "");
+      response = await client.models.generateContent({
+        model: modelId,
+        contents: [
+          { inlineData: { mimeType, data: cleanRef } },
+          promptContext
+        ]
+      });
+    } else {
+      response = await client.models.generateContent({
+        model: modelId,
+        contents: promptContext
+      });
     }
 
-    return content; // Assume Proxy returns raw base64 string in content as is common in some ad-hoc adapters
+    const text = response.text;
+
+    // Check if it's a URL or base64
+    if (text && (text.startsWith('http') || text.length > 200)) {
+      return text;
+    }
+
+    // Try to get inline data from candidates
+    const candidates = response.candidates;
+    if (candidates && candidates[0]?.content?.parts) {
+      const imagePart = candidates[0].content.parts.find((p: any) => p.inlineData);
+      if (imagePart?.inlineData?.data) {
+        return imagePart.inlineData.data;
+      }
+    }
+
+    return null;
   } catch (error) {
-    console.error("Image gen error:", error);
+    console.error("Image gen error", error);
     throw error;
+  }
+}
+
+export async function executeReverseEngineering(
+  imageBase64: string,
+  mimeType: string = "image/jpeg",
+  promptScript: string = SINGLE_STEP_REVERSE_PROMPT
+): Promise<ReverseEngineeringResult | null> {
+  const client = getClient();
+  const modelId = modelConfig.reasoning;
+
+  try {
+    const cleanImage = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    const response = await client.models.generateContent({
+      model: modelId,
+      contents: [
+        { inlineData: { mimeType, data: cleanImage } },
+        promptScript
+      ]
+    });
+
+    const content = response.text || "";
+    // Clean JSON block
+    const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanContent) as ReverseEngineeringResult;
+  } catch (error) {
+    console.error("Reverse engineering failed:", error);
+    return null;
   }
 }

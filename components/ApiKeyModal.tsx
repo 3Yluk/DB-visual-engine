@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Icons } from './Icons';
 import { configureClient, configureModels } from '../services/geminiService';
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -26,15 +26,15 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   useEffect(() => {
     if (isOpen) {
       // Load from localStorage or env
-      const storedKey = localStorage.getItem('DB_api_key') || process.env.GEMINI_API_KEY || '';
-      const storedUrl = localStorage.getItem('DB_base_url') || process.env.API_ENDPOINT || 'http://127.0.0.1:8045/v1';
+      const storedKey = localStorage.getItem('berryxia_api_key') || process.env.GEMINI_API_KEY || '';
+      const storedUrl = localStorage.getItem('berryxia_base_url') || process.env.API_ENDPOINT || 'http://127.0.0.1:8045';
       setApiKey(storedKey);
       setBaseUrl(storedUrl);
 
       // Load Models
-      const r = localStorage.getItem('DB_model_reasoning') || 'gemini-3-pro-high';
-      const f = localStorage.getItem('DB_model_fast') || 'gemini-3-flash';
-      const i = localStorage.getItem('DB_model_image') || 'gemini-3-pro-image';
+      const r = localStorage.getItem('berryxia_model_reasoning') || 'gemini-3-pro-high';
+      const f = localStorage.getItem('berryxia_model_fast') || 'gemini-3-flash';
+      const i = localStorage.getItem('berryxia_model_image') || 'gemini-3-pro-image';
       setReasoningModel(r);
       setFastModel(f);
       setImageModel(i);
@@ -52,19 +52,25 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     setIsTestLoading(true);
     setStatus('idle');
     try {
-      // Auto-append /v1 if missing and not ending in slash
+      // Google SDK expects base API root, remove /v1 if present for cleanliness
       let finalUrl = baseUrl;
-      if (!finalUrl.includes('/v1')) {
-        finalUrl = finalUrl.endsWith('/') ? `${finalUrl}v1` : `${finalUrl}/v1`;
+      if (finalUrl.endsWith('/v1')) {
+        finalUrl = finalUrl.substring(0, finalUrl.length - 3);
+      } else if (finalUrl.endsWith('/v1/')) {
+        finalUrl = finalUrl.substring(0, finalUrl.length - 4);
       }
 
-      const client = new OpenAI({ apiKey, baseURL: finalUrl, dangerouslyAllowBrowser: true });
-      // Simple test query using Fast Model
-      await client.chat.completions.create({
-        model: fastModel,
-        messages: [{ role: "user", content: "Ping" }],
-        max_tokens: 5
+      const client = new GoogleGenAI({
+        apiKey,
+        httpOptions: { baseUrl: finalUrl }
       });
+
+      // Use ai.models.generateContent per SDK docs
+      await client.models.generateContent({
+        model: fastModel,
+        contents: "Ping"
+      });
+
       setStatus('success');
       setStatusMsg("连接成功！");
     } catch (e: any) {
@@ -78,13 +84,13 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
 
   const handleSave = () => {
     if (!apiKey || !baseUrl) return;
-    localStorage.setItem('DB_api_key', apiKey);
-    localStorage.setItem('DB_base_url', baseUrl);
+    localStorage.setItem('berryxia_api_key', apiKey);
+    localStorage.setItem('berryxia_base_url', baseUrl);
 
     // Save Models
-    localStorage.setItem('DB_model_reasoning', reasoningModel);
-    localStorage.setItem('DB_model_fast', fastModel);
-    localStorage.setItem('DB_model_image', imageModel);
+    localStorage.setItem('berryxia_model_reasoning', reasoningModel);
+    localStorage.setItem('berryxia_model_fast', fastModel);
+    localStorage.setItem('berryxia_model_image', imageModel);
 
     configureClient(apiKey, baseUrl);
     configureModels({ reasoning: reasoningModel, fast: fastModel, image: imageModel });
@@ -128,7 +134,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                     type="text"
                     value={baseUrl}
                     onChange={e => setBaseUrl(e.target.value)}
-                    placeholder="http://127.0.0.1:8045/v1"
+                    placeholder="http://127.0.0.1:8045"
                     className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
                   />
                 </div>

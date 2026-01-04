@@ -7,11 +7,15 @@ import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { Icons } from './components/Icons';
 import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt } from './services/geminiService';
 import { saveHistoryItem, getHistory } from './services/historyService';
+import { detectSkillIntent, createUserMessage, createAssistantMessage, createSkillResultMessage, executeQualityCheck, executeRefineSkill, executeReverseSkill } from './services/chatService';
+import { promptManager, PromptVersion } from './services/promptManager';
 import { AGENTS, PIPELINE_ORDER } from './constants';
-import { AgentRole, AppState, HistoryItem } from './types';
+import { AgentRole, AppState, HistoryItem, ChatMessage } from './types';
+import { ChatPanel } from './components/ChatPanel';
 import { LandingPage } from './components/LandingPage';
 import { DocumentationModal } from './components/DocumentationModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
+import { PromptLabModal } from './components/PromptLabModal';
 import ReactMarkdown from 'react-markdown';
 
 const INITIAL_RESULTS = {
@@ -47,13 +51,27 @@ const App: React.FC = () => {
   const [fullscreenImg, setFullscreenImg] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [isPromptLabOpen, setIsPromptLabOpen] = useState(false);
   const [currentLang, setCurrentLang] = useState<'CN' | 'EN'>('CN');
+  const [isHistoryDropdownOpen, setIsHistoryDropdownOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatProcessing, setIsChatProcessing] = useState(false);
 
   const isPipelineRunning = useRef(false);
 
   const showToast = (message: string, type: ToastType = 'info') => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { id, message, type }]);
+  };
+
+  // Helper: Push a new prompt to history (max 20 entries)
+  const pushPromptHistory = (newPrompt: string, source: string) => {
+    if (!newPrompt.trim()) return;
+    const entry = `[${source}] ${new Date().toLocaleTimeString('zh-CN')}\n${newPrompt}`;
+    setState(prev => {
+      const history = [entry, ...prev.promptHistory.filter(h => h !== entry)].slice(0, 20);
+      return { ...prev, promptHistory: history, currentPromptIndex: 0 };
+    });
   };
 
   const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
@@ -79,11 +97,16 @@ const App: React.FC = () => {
     setDisplayImage(`data:${mimeType};base64,${base64Data}`);
     setState(prev => ({
       ...INITIAL_STATE, history: prev.history, image: base64Data, mimeType: mimeType,
-      videoAnalysisDuration: duration || null, isProcessing: true,
-      activeRole: AgentRole.AUDITOR, detectedAspectRatio: aspectRatio
+      videoAnalysisDuration: duration || null, isProcessing: false, // Don't auto-start
+      activeRole: null, // No agent is active yet (prevents "analyzing" animation)
+      detectedAspectRatio: aspectRatio
     }));
     setActiveTab(AgentRole.AUDITOR);
     isPipelineRunning.current = false;
+  };
+
+  const handleStartPipeline = () => {
+    setState(prev => ({ ...prev, isProcessing: true }));
   };
 
   const handleReset = () => {
@@ -119,31 +142,48 @@ const App: React.FC = () => {
         editablePrompt: translated,
         promptCache: { ...prev.promptCache, [target]: translated }
       }));
+      pushPromptHistory(translated, target === 'EN' ? '英文翻译' : '中文翻译');
       setCurrentLang(target);
     } catch (e) { showToast("翻译失败", "error"); }
   };
 
   const parseSuggestions = (content: string) => {
-    const markers = ["调优建议", "调优指令", "Optimization", "Optimization Suggestions"];
+    // Find the optimization section using multiple possible markers
+    const markers = ["调优建议", "调优指令", "Optimization Suggestions", "Optimization"];
     let sectionText = "";
 
     for (const marker of markers) {
-      const parts = content.split(marker);
-      if (parts.length > 1) {
-        sectionText = parts[parts.length - 1];
+      const idx = content.lastIndexOf(marker);
+      if (idx !== -1) {
+        sectionText = content.slice(idx);
         break;
       }
     }
 
     if (!sectionText) return [];
 
-    return sectionText
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 3)
-      .map(line => line.replace(/^[^\w\u4e00-\u9fa5]+/, '').trim())
-      .filter(line => line.length > 5)
-      .slice(0, 3);
+    // Extract lines that start with numbers like "1." "2." "3."
+    const suggestions: string[] = [];
+    const lines = sectionText.split('\n');
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      // Match lines starting with 1. 2. 3. etc., possibly with markers like * - 
+      const match = trimmed.match(/^[\*\-]?\s*([1-3])[.\)、]\s*(.+)/);
+      if (match && match[2]) {
+        // Clean up the suggestion text: remove leading ** and trailing **
+        let suggestion = match[2]
+          .replace(/^\*\*/, '')
+          .replace(/\*\*$/, '')
+          .replace(/^\*\*(.+?)\*\*:?\s*/, '$1: ')
+          .trim();
+        if (suggestion.length > 5) {
+          suggestions.push(suggestion);
+        }
+      }
+    }
+
+    return suggestions.slice(0, 3);
   };
 
   const processImagePipeline = async () => {
@@ -159,7 +199,7 @@ const App: React.FC = () => {
         }));
 
         let agentContent = "";
-        const stream = streamAgentAnalysis(role, state.image!, accumulatedContext);
+        const stream = streamAgentAnalysis(role, state.image!, accumulatedContext, state.mimeType);
         for await (const chunk of stream) {
           agentContent += chunk;
           setState(prev => ({ ...prev, results: { ...prev.results, [role]: { ...prev.results[role], content: agentContent } } }));
@@ -173,7 +213,13 @@ const App: React.FC = () => {
             editablePrompt: agentContent,
             promptCache: { ...prev.promptCache, CN: agentContent }
           }));
+          pushPromptHistory(agentContent, '初始生成');
           setActiveTab('STUDIO');
+        }
+
+        // Halt pipeline if error occurred
+        if (agentContent.includes("[错误]") || agentContent.includes("[⚠️ 配额限制]")) {
+          break;
         }
       }
     } finally {
@@ -212,15 +258,17 @@ const App: React.FC = () => {
     if (!selectedText || state.isRefiningPrompt) return;
     setState(prev => ({ ...prev, isRefiningPrompt: true }));
     try {
-      const newPrompt = await refinePromptWithFeedback(state.editablePrompt, selectedText);
+      const refImg = state.useReferenceImage ? state.image : null;
+      const newPrompt = await refinePromptWithFeedback(state.editablePrompt, selectedText, refImg, state.mimeType);
       setState(prev => ({
         ...prev, editablePrompt: newPrompt, isRefiningPrompt: false,
         promptCache: { CN: '', EN: '' }
       }));
-      handleGenerateImage(newPrompt);
-      showToast("已应用修订并重绘", "success");
+      pushPromptHistory(newPrompt, '应用修订');
+      showToast("已应用修订，请查看 Prompt Studio", "success");
     } catch (e) {
       setState(prev => ({ ...prev, isRefiningPrompt: false }));
+      showToast("应用修订失败", "error");
     }
   };
 
@@ -254,38 +302,275 @@ const App: React.FC = () => {
     } catch (e) { showToast("生成失败", 'error'); setState(prev => ({ ...prev, isGeneratingImage: false })); }
   };
 
+  // Handler to regenerate a single agent
+  const handleRegenerateAgent = async (role: AgentRole) => {
+    if (!state.image || state.isProcessing) return;
+
+    // Build context from previous agents
+    let accumulatedContext = `[Ratio: ${state.detectedAspectRatio}]`;
+    for (const r of PIPELINE_ORDER) {
+      if (r === role) break;
+      if (state.results[r]?.content) {
+        accumulatedContext += `\n\n--- ${r} ---\n${state.results[r].content}\n`;
+      }
+    }
+
+    setState(prev => ({
+      ...prev,
+      activeRole: role,
+      results: { ...prev.results, [role]: { ...prev.results[role], content: '', isStreaming: true, isComplete: false } }
+    }));
+
+    try {
+      let agentContent = "";
+      const stream = streamAgentAnalysis(role, state.image, accumulatedContext, state.mimeType);
+      for await (const chunk of stream) {
+        agentContent += chunk;
+        setState(prev => ({ ...prev, results: { ...prev.results, [role]: { ...prev.results[role], content: agentContent } } }));
+      }
+      setState(prev => ({ ...prev, results: { ...prev.results, [role]: { ...prev.results[role], isStreaming: false, isComplete: true } }, activeRole: null }));
+
+      // If regenerating SYNTHESIZER, update the editable prompt
+      if (role === AgentRole.SYNTHESIZER) {
+        setState(prev => ({
+          ...prev,
+          editablePrompt: agentContent,
+          promptCache: { ...prev.promptCache, CN: agentContent }
+        }));
+        pushPromptHistory(agentContent, '重新生成');
+      }
+      showToast(`${AGENTS[role].name.split(' ')[0]} 重新生成完成`, 'success');
+    } catch (e) {
+      setState(prev => ({ ...prev, activeRole: null, results: { ...prev.results, [role]: { ...prev.results[role], isStreaming: false } } }));
+      showToast('重新生成失败', 'error');
+    }
+  };
+
+  // Chat handlers
+  const handleChatSendMessage = async (message: string) => {
+    // Add user message
+    const userMsg = createUserMessage(message);
+    setChatMessages(prev => [...prev, userMsg]);
+    setIsChatProcessing(true);
+
+    try {
+      const skillType = detectSkillIntent(message);
+
+      if (skillType === 'quality-check') {
+        // Execute quality check skill
+        if (!state.image || !state.generatedImage) {
+          setChatMessages(prev => [...prev, createAssistantMessage('请先生成图片后再进行质检')]);
+        } else {
+          const streamingMsg = createAssistantMessage('正在执行质检分析...', true);
+          setChatMessages(prev => [...prev, streamingMsg]);
+
+          const { content, suggestions } = await executeQualityCheck(
+            state.image,
+            state.generatedImage,
+            (streamContent) => {
+              setChatMessages(prev => prev.map(m =>
+                m.id === streamingMsg.id ? { ...m, content: streamContent } : m
+              ));
+            }
+          );
+
+          // Replace streaming message with skill result
+          setChatMessages(prev => {
+            const filtered = prev.filter(m => m.id !== streamingMsg.id);
+            return [...filtered, createSkillResultMessage('quality-check', '', suggestions)];
+          });
+        }
+      } else if (skillType === 'reverse') {
+        // Reverse engineering skill
+        if (!state.image) {
+          setChatMessages(prev => [...prev, createAssistantMessage('请先上传图片再进行逆向分析')]);
+        } else {
+          const streamingMsg = createAssistantMessage('正在分析画面...', true);
+          setChatMessages(prev => [...prev, streamingMsg]);
+
+          try {
+            const { content, suggestions } = await executeReverseSkill(state.image, state.mimeType);
+
+            setChatMessages(prev => {
+              const filtered = prev.filter(m => m.id !== streamingMsg.id);
+              return [...filtered, createSkillResultMessage('reverse', content, suggestions)];
+            });
+          } catch (e) {
+            setChatMessages(prev => [...prev.filter(m => m.id !== streamingMsg.id), createAssistantMessage('分析失败，请重试。')]);
+          }
+        }
+      } else if (skillType === 'refine') {
+        // Treat as refinement request
+        const streamingMsg = createAssistantMessage('正在修改提示词...', true);
+        setChatMessages(prev => [...prev, streamingMsg]);
+
+        const refImg = state.useReferenceImage ? state.image : null;
+        const newPrompt = await executeRefineSkill(state.editablePrompt, message, refImg, state.mimeType);
+
+        setState(prev => ({ ...prev, editablePrompt: newPrompt, promptCache: { CN: '', EN: '' } }));
+        pushPromptHistory(newPrompt, '对话修订');
+
+        setChatMessages(prev => prev.map(m =>
+          m.id === streamingMsg.id ? { ...m, content: '已根据你的建议修改了提示词，请查看左侧编辑器。', isStreaming: false } : m
+        ));
+      } else if (skillType === 'generate') {
+        setChatMessages(prev => [...prev, createAssistantMessage('正在生成图片...')]);
+        handleGenerateImage();
+      } else if (skillType === 'translate') {
+        setChatMessages(prev => [...prev, createAssistantMessage('正在翻译...')]);
+        handleToggleLanguage();
+      } else {
+        setChatMessages(prev => [...prev, createAssistantMessage('我可以帮你：\n- 质检分析\n- 修改提示词\n- 翻译\n- 生成图片\n\n请告诉我你想要做什么？')]);
+      }
+    } catch (e) {
+      setChatMessages(prev => [...prev, createAssistantMessage('抱歉，处理出错了。请重试。')]);
+    }
+
+    setIsChatProcessing(false);
+  };
+
+  const handleApplySuggestions = async (messageId: string, indices: number[]) => {
+    const msg = chatMessages.find(m => m.id === messageId);
+    if (!msg || !msg.suggestions) return;
+
+    const selectedText = msg.suggestions.filter((_, i) => indices.includes(i)).join('; ');
+    if (!selectedText) return;
+
+    // Special handling for Reverse skill: Replace prompt directly
+    if (msg.skillType === 'reverse') {
+      setState(prev => ({ ...prev, editablePrompt: selectedText }));
+      pushPromptHistory(selectedText, '逆向生成');
+      setChatMessages(prev => prev.map(m => m.id === messageId ? { ...m, applied: true } : m));
+      showToast('已应用生成的提示词', 'success');
+      return;
+    }
+
+    const refImg = state.useReferenceImage ? state.image : null;
+    const newPrompt = await refinePromptWithFeedback(state.editablePrompt, selectedText, refImg, state.mimeType);
+
+    setState(prev => ({ ...prev, editablePrompt: newPrompt, promptCache: { CN: '', EN: '' } }));
+    pushPromptHistory(newPrompt, '应用建议');
+
+    // Mark message as applied
+    setChatMessages(prev => prev.map(m =>
+      m.id === messageId ? { ...m, applied: true } : m
+    ));
+
+    showToast('已应用所选建议', 'success');
+  };
+
+  const handleToggleSuggestion = (messageId: string, index: number) => {
+    setChatMessages(prev => prev.map(m => {
+      if (m.id !== messageId) return m;
+      const current = m.selectedIndices || [];
+      const newIndices = current.includes(index)
+        ? current.filter(i => i !== index)
+        : [...current, index];
+      return { ...m, selectedIndices: newIndices };
+    }));
+  };
+
   const renderTabContent = () => {
     if (activeTab === 'STUDIO') {
       return (
-        <div className="flex flex-col h-full bg-white relative">
-          <div className="px-8 pt-6 pb-2 flex items-center justify-between flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="p-1 bg-black rounded text-white shadow-sm"><Icons.PenTool size={10} /></div>
-              <h3 className="font-bold text-stone-800 text-[10px] tracking-widest uppercase font-mono">Prompt Studio</h3>
+        <div className="flex flex-col h-full bg-white">
+          {/* Header */}
+          <div className="px-6 pt-5 pb-3 border-b border-stone-100 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-stone-800 text-base font-serif">Prompt Studio</h3>
+                <p className="text-[10px] text-stone-400 font-medium uppercase mt-0.5">提示词编辑器</p>
+              </div>
+              {/* Version Selector */}
+              <div className="flex items-center gap-2">
+                <select
+                  className="text-xs bg-stone-100 border-0 rounded-lg px-2 py-1.5 text-stone-600 font-bold focus:ring-2 focus:ring-black/10 outline-none cursor-pointer"
+                  value={promptManager.getActiveVersionId(AgentRole.SYNTHESIZER) || ''}
+                  onChange={(e) => {
+                    promptManager.setActiveVersionId(AgentRole.SYNTHESIZER, e.target.value);
+                    // Force re-render
+                    setState(prev => ({ ...prev }));
+                  }}
+                >
+                  {promptManager.getVersions(AgentRole.SYNTHESIZER).map(v => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {state.promptHistory.length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsHistoryDropdownOpen(!isHistoryDropdownOpen)}
+                      className="flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded-lg text-[9px] font-bold"
+                    >
+                      <Icons.History size={10} />
+                      {state.promptHistory.length}
+                    </button>
+                    {isHistoryDropdownOpen && (
+                      <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-stone-200 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+                        {state.promptHistory.map((entry, idx) => {
+                          const lines = entry.split('\n');
+                          const header = lines[0];
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                const content = lines.slice(1).join('\n');
+                                setState(prev => ({ ...prev, editablePrompt: content }));
+                                setIsHistoryDropdownOpen(false);
+                              }}
+                              className="px-3 py-2 hover:bg-stone-50 cursor-pointer text-[10px] border-b border-stone-50 last:border-b-0"
+                            >
+                              <span className="font-bold text-amber-600">{header}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => handleRegenerateAgent(AgentRole.SYNTHESIZER)} disabled={!state.image || state.isProcessing} className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg disabled:opacity-40" title="重新生成">
+                  <Icons.RefreshCw size={12} />
+                </button>
+                <button onClick={handleToggleLanguage} className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg" title="翻译">
+                  <Icons.Languages size={12} />
+                </button>
+                <button onClick={() => { navigator.clipboard.writeText(state.editablePrompt); showToast('已复制', 'success'); }} disabled={!state.editablePrompt} className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg disabled:opacity-40" title="复制">
+                  <Icons.CheckSquare size={12} />
+                </button>
+              </div>
             </div>
-            <button
-              onClick={handleToggleLanguage}
-              className="flex items-center gap-2 px-3 py-1 bg-stone-100 rounded-full text-[9px] font-bold text-stone-500 hover:bg-stone-200 transition-all"
-            >
-              <Icons.Languages size={12} />
-              {currentLang === 'CN' ? '切换 MJ 英文模式' : '切换中文工程模式'}
-            </button>
           </div>
-          <div className="flex-1 min-h-0 px-8 py-4 mb-24 overflow-hidden">
+
+          {/* Textarea */}
+          <div className="flex-1 min-h-0 p-4 flex flex-col">
             <textarea
               value={state.editablePrompt}
               onChange={(e) => setState(prev => ({ ...prev, editablePrompt: e.target.value }))}
-              className="w-full h-full bg-transparent border-none p-0 text-[13px] font-sans leading-relaxed focus:ring-0 outline-none transition-all resize-none overflow-y-auto custom-scrollbar"
-              placeholder="正在逆向推导物理协议..."
+              className="flex-1 w-full bg-stone-50 rounded-xl border border-stone-200 p-4 text-[12px] font-mono leading-relaxed focus:ring-2 focus:ring-black/10 outline-none resize-none overflow-y-auto custom-scrollbar"
+              placeholder="正在等待提示词生成..."
               spellCheck={false}
             />
           </div>
-          <div className="absolute bottom-6 left-8 right-8 z-30">
-            <div className="bg-white border border-stone-200 rounded-2xl shadow-xl p-2.5 flex items-center gap-3">
-              <button onClick={() => setState(prev => ({ ...prev, useReferenceImage: !prev.useReferenceImage }))} title="启用图生图参考" className={`p-2.5 rounded-xl transition-all ${state.useReferenceImage ? 'bg-orange-50 text-orange-600 animate-pulse-orange shadow-inner' : 'bg-stone-50 text-stone-400'}`}><Icons.Image size={18} /></button>
-              <input type="text" value={refinementInput} onChange={(e) => setRefinementInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleGenerateImage()} placeholder="输入指令微调或直接重绘..." className="flex-1 bg-transparent border-none text-xs outline-none font-medium placeholder:text-stone-300" />
-              <button onClick={() => handleGenerateImage()} disabled={state.isGeneratingImage || !state.editablePrompt} className="px-6 py-2.5 bg-black text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all">
-                {state.isGeneratingImage ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.Play size={14} fill="currentColor" />}
+
+          {/* Bottom Actions */}
+          <div className="p-4 border-t border-stone-100 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setState(prev => ({ ...prev, useReferenceImage: !prev.useReferenceImage }))}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all text-xs font-bold ${state.useReferenceImage ? 'bg-orange-100 text-orange-600' : 'bg-stone-100 text-stone-400'}`}
+                title="图生图参考"
+              >
+                <Icons.Image size={14} />
+                {state.useReferenceImage ? '参考原图' : '纯文生图'}
+              </button>
+              <button
+                onClick={() => handleGenerateImage()}
+                disabled={state.isGeneratingImage || !state.editablePrompt}
+                className="flex-1 py-2.5 bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-40 hover:bg-stone-800 transition-all"
+              >
+                {state.isGeneratingImage ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.Play size={14} />}
                 复刻资产
               </button>
             </div>
@@ -293,7 +578,30 @@ const App: React.FC = () => {
         </div>
       );
     }
-    return <div className="h-full overflow-y-auto p-8 pr-2 custom-scrollbar"><AgentCard config={AGENTS[activeTab as AgentRole]} result={state.results[activeTab as AgentRole]} isActive={state.activeRole === activeTab} isPending={!state.results[activeTab as AgentRole]?.content} /></div>;
+    // Agent tabs (AUDITOR, DESCRIPTOR, ARCHITECT)
+    return (
+      <div className="h-full overflow-hidden p-4">
+        <AgentCard
+          config={AGENTS[activeTab as AgentRole]}
+          result={state.results[activeTab as AgentRole]}
+          isActive={state.activeRole === activeTab}
+          isPending={!state.results[activeTab as AgentRole]?.content}
+          onRegenerate={() => handleRegenerateAgent(activeTab as AgentRole)}
+          onContentChange={(content) => setState(prev => ({
+            ...prev,
+            results: { ...prev.results, [activeTab]: { ...prev.results[activeTab as AgentRole], content } }
+          }))}
+          onCopy={() => {
+            const content = state.results[activeTab as AgentRole]?.content;
+            if (content) {
+              navigator.clipboard.writeText(content);
+              showToast('已复制', 'success');
+            }
+          }}
+          onStartPipeline={activeTab === AgentRole.AUDITOR ? handleStartPipeline : undefined}
+        />
+      </div>
+    );
   };
 
   if (showLanding) return <LandingPage onEnterApp={() => setShowLanding(false)} hasKey={hasKey} onSelectKey={handleSelectKey} />;
@@ -303,6 +611,7 @@ const App: React.FC = () => {
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <DocumentationModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
       <ApiKeyModal isOpen={isKeyModalOpen} onClose={() => setIsKeyModalOpen(false)} />
+      <PromptLabModal isOpen={isPromptLabOpen} onClose={() => setIsPromptLabOpen(false)} />
 
       {/* Fullscreen Overlay */}
       {fullscreenImg && (
@@ -314,12 +623,96 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* History Panel */}
+      {state.isHistoryOpen && (
+        <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setState(prev => ({ ...prev, isHistoryOpen: false }))}>
+          <div
+            className="absolute right-0 top-0 bottom-0 w-[400px] bg-white shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-6 border-b border-stone-100 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-stone-100 rounded-xl"><Icons.History size={18} className="text-stone-600" /></div>
+                <h2 className="text-lg font-serif font-bold text-stone-800">历史记录</h2>
+              </div>
+              <button
+                onClick={() => setState(prev => ({ ...prev, isHistoryOpen: false }))}
+                className="p-2 hover:bg-stone-100 rounded-lg transition-colors"
+              >
+                <Icons.X size={20} className="text-stone-400" />
+              </button>
+            </div>
+
+            {/* History List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+              {state.history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-stone-300 space-y-3">
+                  <Icons.Image size={48} strokeWidth={1} />
+                  <p className="text-sm">暂无生成记录</p>
+                </div>
+              ) : (
+                state.history.map((item) => (
+                  <div
+                    key={item.id}
+                    className="bg-stone-50 rounded-2xl p-4 space-y-3 hover:bg-stone-100 transition-colors cursor-pointer group"
+                    onClick={() => {
+                      if (item.generatedImage) {
+                        setFullscreenImg(`data:image/png;base64,${item.generatedImage}`);
+                      }
+                    }}
+                  >
+                    {/* Images Row */}
+                    <div className="flex gap-3">
+                      {/* Original Image */}
+                      <div className="w-16 h-16 rounded-lg overflow-hidden border border-stone-200 flex-shrink-0">
+                        <img
+                          src={`data:${item.mimeType || 'image/png'};base64,${item.originalImage}`}
+                          alt="Original"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      {/* Arrow */}
+                      <div className="flex items-center text-stone-300">
+                        <Icons.ArrowRight size={16} />
+                      </div>
+                      {/* Generated Image */}
+                      <div className="w-16 h-16 rounded-lg overflow-hidden border-2 border-orange-200 flex-shrink-0 shadow-sm">
+                        {item.generatedImage ? (
+                          <img
+                            src={`data:image/png;base64,${item.generatedImage}`}
+                            alt="Generated"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-stone-200 flex items-center justify-center text-stone-400">
+                            <Icons.Image size={20} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Prompt Preview */}
+                    <p className="text-xs text-stone-500 line-clamp-2 leading-relaxed">{item.prompt}</p>
+                    {/* Timestamp */}
+                    <div className="flex items-center gap-2 text-[10px] text-stone-400">
+                      <Icons.Clock size={10} />
+                      {new Date(item.timestamp).toLocaleString('zh-CN')}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-stone-200 h-16 flex items-center justify-between px-10">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowLanding(true)}>
           <div className="w-8 h-8 bg-black rounded flex items-center justify-center text-white shadow-xl"><Icons.Compass size={18} /></div>
           <span className="font-serif font-bold text-xl tracking-tight text-stone-800">DB</span>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setIsPromptLabOpen(true)} className="p-2.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-amber-500 transition-all" title="Prompt Lab"><Icons.Wand2 size={20} /></button>
           <button onClick={() => setIsHelpOpen(true)} className="p-2.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-orange-500 transition-all" title="帮助文档"><Icons.Help size={20} /></button>
           <button onClick={() => setState(prev => ({ ...prev, isHistoryOpen: true }))} className="p-2.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-black transition-all" title="历史记录"><Icons.History size={20} /></button>
           <div className="w-px h-6 bg-stone-200 mx-1" />
@@ -402,77 +795,15 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Sidebar: Precision Review (QA) - Fixed Layout */}
+        {/* Right Sidebar: AI Chat */}
         <div className="col-span-3 h-full flex flex-col bg-white border border-stone-200 rounded-3xl overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-stone-100 bg-stone-50 flex items-center justify-between flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="p-1 bg-rose-50 rounded text-rose-500"><Icons.ScanEye size={14} /></div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-stone-600">Precision Review</span>
-            </div>
-            {state.generatedImage && !state.isRefining && (
-              <button onClick={handleRunQA} className="p-2 hover:bg-stone-200 rounded-lg text-stone-400 hover:text-stone-800 transition-colors" title="重新分析"><Icons.RefreshCw size={14} /></button>
-            )}
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
-            {!state.generatedImage ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-stone-200 text-center space-y-3 opacity-60">
-                <Icons.Image size={40} strokeWidth={1} />
-                <p className="text-[11px] font-medium leading-relaxed">等待资产生成...</p>
-              </div>
-            ) : (
-              <div className="flex flex-col h-full">
-                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar pb-10">
-                  <div className="prose prose-stone max-w-none text-[12px] leading-relaxed text-stone-600">
-                    <ReactMarkdown>{state.results[AgentRole.CRITIC].content.split(/(?:调优建议|调优指令|Optimization)/i)[0]}</ReactMarkdown>
-                  </div>
-
-                  {state.isRefining && (
-                    <div className="flex flex-col items-center gap-3 py-10 animate-pulse bg-stone-50/50 rounded-2xl border border-dashed border-stone-200 mt-4">
-                      <Icons.RefreshCw size={24} className="animate-spin text-orange-500" />
-                      <p className="text-[9px] font-bold text-stone-400 tracking-[0.2em] uppercase text-center">像素级差异捕获中...</p>
-                    </div>
-                  )}
-
-                  {state.suggestions.length > 0 && (
-                    <div className="mt-8 pt-6 border-t border-stone-100 space-y-4 animate-in slide-in-from-bottom duration-500 pb-24">
-                      <h4 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">可勾选的修订协议</h4>
-                      <div className="space-y-2">
-                        {state.suggestions.map((sug, idx) => {
-                          const isSelected = state.selectedSuggestionIndices.includes(idx);
-                          return (
-                            <div key={idx} onClick={() => {
-                              const s = [...state.selectedSuggestionIndices];
-                              if (isSelected) setState(p => ({ ...p, selectedSuggestionIndices: s.filter(i => i !== idx) }));
-                              else setState(p => ({ ...p, selectedSuggestionIndices: [...s, idx] }));
-                            }}
-                              className={`group flex items-start gap-3 p-3 rounded-2xl cursor-pointer transition-all border ${isSelected ? 'bg-emerald-50 border-emerald-100 text-emerald-900 shadow-sm' : 'hover:bg-stone-50 border-stone-100 text-stone-500 bg-white'}`}
-                            >
-                              <div className={`mt-0.5 w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-stone-200 bg-white'}`}>
-                                {isSelected && <Icons.CheckSquare size={10} />}
-                              </div>
-                              <span className="text-[11px] leading-snug font-medium">{sug}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Bottom Action Area */}
-                {state.suggestions.length > 0 && (
-                  <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-white via-white to-transparent pt-10">
-                    <button onClick={handleAutoFix} disabled={state.selectedSuggestionIndices.length === 0 || state.isRefiningPrompt}
-                      className="w-full py-4 bg-black text-white rounded-2xl text-[11px] font-bold uppercase shadow-2xl disabled:opacity-30 transition-all flex items-center justify-center gap-2 hover:bg-stone-800 active:scale-[0.98]"
-                    >
-                      {state.isRefiningPrompt ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.Wand2 size={14} />}
-                      应用所选修订并重绘
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <ChatPanel
+            messages={chatMessages}
+            onSendMessage={handleChatSendMessage}
+            onApplySuggestions={handleApplySuggestions}
+            onToggleSuggestion={handleToggleSuggestion}
+            isProcessing={isChatProcessing}
+          />
         </div>
       </main>
     </div>
