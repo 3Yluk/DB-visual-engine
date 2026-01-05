@@ -40,7 +40,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
       let defaultReasoning = 'gemini-3-pro-high';
       let defaultFast = 'gemini-3-flash';
       let defaultImage = 'gemini-3-pro-image';
-      
+
       if (storedMode === 'official') {
         defaultReasoning = 'gemini-2.0-flash-thinking-exp';
         defaultFast = 'gemini-2.0-flash-exp';
@@ -73,7 +73,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     setStatus('idle');
     try {
       let client: GoogleGenAI;
-      
+
       if (apiMode === 'official') {
         // Official Google AI API - no custom baseUrl
         client = new GoogleGenAI({
@@ -87,7 +87,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
         } else if (finalUrl.endsWith('/v1/')) {
           finalUrl = finalUrl.substring(0, finalUrl.length - 4);
         }
-        
+
         client = new GoogleGenAI({
           apiKey,
           httpOptions: { baseUrl: finalUrl }
@@ -114,7 +114,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   const handleSave = () => {
     if (!apiKey) return;
     if (apiMode === 'custom' && !baseUrl) return;
-    
+
     // Save API mode
     localStorage.setItem('berryxia_api_mode', apiMode);
     localStorage.setItem('berryxia_api_key', apiKey);
@@ -132,26 +132,26 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-stone-200 flex flex-col max-h-[90vh]">
-        <div className="p-5 border-b border-stone-100 flex justify-between items-center bg-stone-50">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+      <div className="bg-stone-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-stone-700 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        <div className="p-5 border-b border-stone-800 flex justify-between items-center bg-stone-950">
           <div className="flex gap-4">
             <button
               onClick={() => setActiveTab('connection')}
-              className={`text-sm font-bold flex items-center gap-2 ${activeTab === 'connection' ? 'text-stone-900 border-b-2 border-stone-900' : 'text-stone-400 hover:text-stone-600'}`}
+              className={`text-sm font-bold flex items-center gap-2 ${activeTab === 'connection' ? 'text-stone-200 border-b-2 border-orange-500' : 'text-stone-500 hover:text-stone-300'}`}
             >
               <Icons.Settings size={16} />
               Connection
             </button>
             <button
               onClick={() => setActiveTab('models')}
-              className={`text-sm font-bold flex items-center gap-2 ${activeTab === 'models' ? 'text-stone-900 border-b-2 border-stone-900' : 'text-stone-400 hover:text-stone-600'}`}
+              className={`text-sm font-bold flex items-center gap-2 ${activeTab === 'models' ? 'text-stone-200 border-b-2 border-orange-500' : 'text-stone-500 hover:text-stone-300'}`}
             >
               <Icons.Cpu size={16} />
               Models
             </button>
           </div>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-900 transition-colors">
+          <button onClick={onClose} className="text-stone-500 hover:text-stone-200 transition-colors">
             <Icons.X size={20} />
           </button>
         </div>
@@ -171,11 +171,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                       setFastModel('gemini-2.0-flash-exp');
                       setImageModel('imagen-3.0-generate-001');
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-                      apiMode === 'official'
-                        ? 'bg-black text-white'
-                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                    }`}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${apiMode === 'official'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-stone-800 text-stone-400 hover:bg-stone-700'
+                      }`}
                   >
                     <div className="flex flex-col items-center gap-1">
                       <Icons.Globe size={16} />
@@ -190,11 +189,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                       setFastModel('gemini-3-flash');
                       setImageModel('gemini-3-pro-image');
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-                      apiMode === 'custom'
-                        ? 'bg-black text-white'
-                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                    }`}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${apiMode === 'custom'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-stone-800 text-stone-400 hover:bg-stone-700'
+                      }`}
                   >
                     <div className="flex flex-col items-center gap-1">
                       <Icons.Server size={16} />
@@ -209,13 +207,13 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">Target Endpoint</label>
                   <div className="relative">
-                    <Icons.Link size={14} className="absolute left-3 top-3 text-stone-400" />
+                    <Icons.Link size={14} className="absolute left-3 top-3 text-stone-500" />
                     <input
                       type="text"
                       value={baseUrl}
                       onChange={e => setBaseUrl(e.target.value)}
                       placeholder="http://127.0.0.1:8045"
-                      className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
+                      className="w-full pl-9 pr-4 py-2.5 bg-stone-800 border border-stone-700 rounded-xl text-sm font-mono text-stone-200 focus:border-orange-500 outline-none transition-all placeholder:text-stone-600"
                     />
                   </div>
                 </div>
@@ -227,18 +225,18 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                   {apiMode === 'official' ? 'Google AI API Key' : 'Access Key'}
                 </label>
                 <div className="relative">
-                  <Icons.Key size={14} className="absolute left-3 top-3 text-stone-400" />
+                  <Icons.Key size={14} className="absolute left-3 top-3 text-stone-500" />
                   <input
                     type="password"
                     value={apiKey}
                     onChange={e => setApiKey(e.target.value)}
                     placeholder={apiMode === 'official' ? 'AIza...' : 'sk-...'}
-                    className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
+                    className="w-full pl-9 pr-4 py-2.5 bg-stone-800 border border-stone-700 rounded-xl text-sm font-mono text-stone-200 focus:border-orange-500 outline-none transition-all placeholder:text-stone-600"
                   />
                 </div>
                 {apiMode === 'official' && (
-                  <p className="text-[10px] text-stone-400 mt-1">
-                    从 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Google AI Studio</a> 获取 API Key
+                  <p className="text-[10px] text-stone-500 mt-1">
+                    从 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline">Google AI Studio</a> 获取 API Key
                   </p>
                 )}
               </div>
@@ -249,39 +247,39 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">Reasoning Model</label>
-                <p className="text-[10px] text-stone-400">Used for deep analysis (Agents, Architect, Auditor)</p>
+                <p className="text-[10px] text-stone-600">Used for deep analysis (Agents, Architect, Auditor)</p>
                 <input
                   type="text"
                   value={reasoningModel}
                   onChange={e => setReasoningModel(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
+                  className="w-full px-4 py-2.5 bg-stone-800 border border-stone-700 rounded-xl text-sm font-mono text-stone-200 focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">Fast Model</label>
-                <p className="text-[10px] text-stone-400">Used for translation & UI layout detection</p>
+                <p className="text-[10px] text-stone-600">Used for translation & UI layout detection</p>
                 <input
                   type="text"
                   value={fastModel}
                   onChange={e => setFastModel(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
+                  className="w-full px-4 py-2.5 bg-stone-800 border border-stone-700 rounded-xl text-sm font-mono text-stone-200 focus:border-orange-500 outline-none transition-all"
                 />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">Image Model</label>
-                <p className="text-[10px] text-stone-400">Used for visual generation</p>
+                <p className="text-[10px] text-stone-600">Used for visual generation</p>
                 <input
                   type="text"
                   value={imageModel}
                   onChange={e => setImageModel(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
+                  className="w-full px-4 py-2.5 bg-stone-800 border border-stone-700 rounded-xl text-sm font-mono text-stone-200 focus:border-orange-500 outline-none transition-all"
                 />
               </div>
             </div>
           )}
 
           {status !== 'idle' && (
-            <div className={`text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${status === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+            <div className={`text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${status === 'success' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-rose-900/30 text-rose-400'}`}>
               {status === 'success' ? <Icons.CheckCircle2 size={12} /> : <Icons.AlertCircle size={12} />}
               {statusMsg}
             </div>
@@ -291,14 +289,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
             <button
               onClick={handleTestConnection}
               disabled={isTestLoading}
-              className="flex-1 py-2.5 border border-stone-200 hover:bg-stone-50 text-stone-600 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 border border-stone-700 hover:bg-stone-800 text-stone-400 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2"
             >
               {isTestLoading ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.Activity size={14} />}
               Test Connection
             </button>
             <button
               onClick={handleSave}
-              className="flex-1 py-2.5 bg-black text-white hover:bg-stone-800 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 bg-orange-600 text-white hover:bg-orange-500 rounded-xl font-bold text-xs transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
             >
               <Icons.Save size={14} />
               Save & Restart

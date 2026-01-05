@@ -33,7 +33,7 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, 
     },
     {
       title: "5. Precision QA 质检闭环",
-      desc: "逐像素比对 Source 与 Replica。提取由于模型理解偏差导致的材质、光影或空间错误，并转化为可勾选的“调优指令”。",
+      desc: "逐像素比对 Source 与 Replica。提取由于模型理解偏差导致的材质、光影或空间错误，并转化为可勾选的「调优指令」。",
       op: "生成图片后自动/手动触发。勾选您满意的修订建议，点击 '应用修订'，系统将进行增量式重绘优化。"
     },
     {
@@ -49,36 +49,36 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, 
   ];
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-stone-200" onClick={e => e.stopPropagation()}>
-        <div className="p-6 border-b border-stone-100 flex justify-between items-center bg-stone-50">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+      <div className="bg-stone-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-stone-700" onClick={e => e.stopPropagation()}>
+        <div className="p-6 border-b border-stone-800 flex justify-between items-center bg-stone-950">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center text-white">
+            <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center text-white">
               <Icons.Help size={20} />
             </div>
             <div>
-              <h3 className="font-bold text-stone-800 leading-tight">UnImage 功能规格手册</h3>
-              <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Enterprise Edition v2.5.7</p>
+              <h3 className="font-bold text-stone-200 leading-tight">UnImage 功能规格手册</h3>
+              <p className="text-[10px] text-stone-500 font-bold uppercase tracking-widest">Enterprise Edition v2.5.7</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-stone-200 rounded-full transition-colors"><Icons.X size={20} /></button>
+          <button onClick={onClose} className="p-2 hover:bg-stone-800 rounded-full transition-colors text-stone-400 hover:text-stone-200"><Icons.X size={20} /></button>
         </div>
         <div className="p-8 overflow-y-auto max-h-[70vh] custom-scrollbar space-y-6">
           {features.map((f, i) => (
-            <div key={i} className="group p-5 rounded-2xl border border-stone-100 hover:border-orange-100 hover:bg-orange-50/20 transition-all">
-              <h4 className="font-bold text-stone-900 flex items-center gap-2 mb-2">
+            <div key={i} className="group p-5 rounded-2xl border border-stone-800 hover:border-orange-900/50 hover:bg-orange-900/10 transition-all">
+              <h4 className="font-bold text-stone-200 flex items-center gap-2 mb-2">
                 <span className="text-orange-500 text-xs font-mono">{i + 1}.</span>
                 {f.title}
               </h4>
-              <p className="text-sm text-stone-600 leading-relaxed mb-4">{f.desc}</p>
-              <div className="bg-white p-3 rounded-xl border border-stone-100 shadow-sm">
-                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1 flex items-center gap-1.5"><Icons.Play size={10} className="text-orange-500" /> 操作指引</p>
-                <p className="text-xs text-stone-700 font-medium">{f.op}</p>
+              <p className="text-sm text-stone-400 leading-relaxed mb-4">{f.desc}</p>
+              <div className="bg-stone-950 p-3 rounded-xl border border-stone-800 shadow-sm">
+                <p className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1 flex items-center gap-1.5"><Icons.Play size={10} className="text-orange-500" /> 操作指引</p>
+                <p className="text-xs text-stone-300 font-medium">{f.op}</p>
               </div>
             </div>
           ))}
         </div>
-        <div className="p-6 bg-stone-50 border-t border-stone-100 flex justify-center text-[10px] text-stone-400 font-mono italic">
+        <div className="p-6 bg-stone-950 border-t border-stone-800 flex justify-center text-[10px] text-stone-600 font-mono italic">
           UnImage | All Rights Reserved 2024
         </div>
       </div>
