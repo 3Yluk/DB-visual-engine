@@ -1,10 +1,12 @@
 import React from 'react';
+import { Icons } from './Icons';
 
 interface HistoryThumbnailProps {
   imageUrl: string;
   index: number;
   isActive: boolean;
   onClick: () => void;
+  onDelete?: () => void;
 }
 
 export const HistoryThumbnail: React.FC<HistoryThumbnailProps> = ({
@@ -12,7 +14,13 @@ export const HistoryThumbnail: React.FC<HistoryThumbnailProps> = ({
   index,
   isActive,
   onClick,
+  onDelete,
 }) => {
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete?.();
+  };
+
   return (
     <div
       onClick={onClick}
@@ -33,6 +41,17 @@ export const HistoryThumbnail: React.FC<HistoryThumbnailProps> = ({
 
       {isActive && (
         <div className="absolute top-2 right-2 w-3 h-3 bg-orange-500 rounded-full ring-2 ring-white shadow-md animate-pulse" />
+      )}
+
+      {/* Delete button - appears on hover */}
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          className="absolute top-1 left-1 p-1 bg-black/60 hover:bg-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          title="删除此记录"
+        >
+          <Icons.X size={12} className="text-white" />
+        </button>
       )}
     </div>
   );

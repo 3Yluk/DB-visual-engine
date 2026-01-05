@@ -8,7 +8,7 @@ import { HistoryThumbnail } from './components/HistoryThumbnail';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { Icons } from './components/Icons';
 import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt } from './services/geminiService';
-import { saveHistoryItem, getHistory } from './services/historyService';
+import { saveHistoryItem, getHistory, deleteHistoryItemById } from './services/historyService';
 import { detectSkillIntent, createUserMessage, createAssistantMessage, createSkillResultMessage, executeQualityCheck, executeRefineSkill, executeReverseSkill } from './services/chatService';
 import { promptManager, PromptVersion } from './services/promptManager';
 import { saveCurrentTask, loadCurrentTask, clearCurrentTask } from './services/cacheService';
@@ -613,6 +613,48 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, selectedHistoryIndex: index }));
   };
 
+  // Handler to delete a history item by index
+  const handleDeleteHistoryItem = async (index: number) => {
+    const historyItem = state.history[index];
+
+    // Delete from IndexedDB if it exists
+    if (historyItem?.id) {
+      try {
+        await deleteHistoryItemById(historyItem.id);
+      } catch (e) {
+        console.error('Failed to delete from DB:', e);
+      }
+    }
+
+    // Remove from local state
+    setState(prev => {
+      const newGeneratedImages = [...prev.generatedImages];
+      const newHistory = [...prev.history];
+
+      newGeneratedImages.splice(index, 1);
+      newHistory.splice(index, 1);
+
+      // Adjust selected index if necessary
+      let newSelectedIndex = prev.selectedHistoryIndex;
+      if (index <= newSelectedIndex) {
+        newSelectedIndex = Math.max(0, newSelectedIndex - 1);
+      }
+      if (newGeneratedImages.length === 0) {
+        newSelectedIndex = 0;
+      }
+
+      return {
+        ...prev,
+        generatedImages: newGeneratedImages,
+        history: newHistory,
+        selectedHistoryIndex: newSelectedIndex,
+        generatedImage: newGeneratedImages.length > 0 ? newGeneratedImages[newSelectedIndex] : null
+      };
+    });
+
+    showToast('已删除记录', 'info');
+  };
+
   // Handler to regenerate a single agent
   const handleRegenerateAgent = async (role: AgentRole) => {
     if (!state.image || state.isProcessing) return;
@@ -1156,10 +1198,10 @@ const App: React.FC = () => {
       </nav>
 
       <main className="pt-24 px-8 max-w-[1920px] mx-auto grid grid-cols-12 gap-8 h-[calc(100vh-6rem)]">
-        {/* Left Sidebar: Assets & References - Fixed Scrolling */}
-        <div className="col-span-4 flex flex-col min-h-0 h-full pb-10">
+        {/* Left Sidebar: Assets & References - Scrollable */}
+        <div className="col-span-4 flex flex-col min-h-0 h-full pb-10 overflow-y-auto custom-scrollbar">
           {/* 上部分：图片区域 */}
-          <div className={`${state.generatedImages.length > 0 ? 'flex-shrink-0' : 'flex-1'}`}>
+          <div className="flex-shrink-0">
             {!displayImage ? (
               <ImageUploader onImageSelected={handleFileSelected} disabled={state.isProcessing} />
             ) : (
@@ -1219,11 +1261,11 @@ const App: React.FC = () => {
 
           {/* 下方：历史缩略图多宫格 - 始终显示 */}
           {state.generatedImages.length > 0 && (
-            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar mt-4">
+            <div className="mt-4">
               <h2 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-3 px-1">
                 History ({state.generatedImages.length})
               </h2>
-              <div className="grid grid-cols-3 gap-3 pb-8">
+              <div className="grid grid-cols-4 gap-1 pb-16">
                 {state.generatedImages.map((img, index) => (
                   <HistoryThumbnail
                     key={index}
@@ -1242,6 +1284,7 @@ const App: React.FC = () => {
                         }));
                       }
                     }}
+                    onDelete={() => handleDeleteHistoryItem(index)}
                   />
                 ))}
               </div>
