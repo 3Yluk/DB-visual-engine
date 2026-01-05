@@ -57,7 +57,7 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, 
               <Icons.Help size={20} />
             </div>
             <div>
-              <h3 className="font-bold text-stone-800 leading-tight">DB 功能规格手册</h3>
+              <h3 className="font-bold text-stone-800 leading-tight">UnImage 功能规格手册</h3>
               <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Enterprise Edition v2.5.7</p>
             </div>
           </div>
@@ -79,7 +79,7 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, 
           ))}
         </div>
         <div className="p-6 bg-stone-50 border-t border-stone-100 flex justify-center text-[10px] text-stone-400 font-mono italic">
-          DB Visual Engine | All Rights Reserved 2024
+          UnImage | All Rights Reserved 2024
         </div>
       </div>
     </div>

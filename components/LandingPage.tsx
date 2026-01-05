@@ -34,7 +34,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp, hasKey, on
             <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg flex items-center justify-center text-black shadow-[0_0_15px_rgba(249,115,22,0.5)]">
               <Icons.Compass size={20} />
             </div>
-            <span className="font-serif font-bold text-xl tracking-tight text-white">DB</span>
+            <span className="font-serif font-bold text-xl tracking-tight text-white">UnImage</span>
           </div>
           <div className="flex items-center gap-4">
             {!hasKey && (
@@ -60,7 +60,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp, hasKey, on
         <div className="max-w-5xl mx-auto text-center space-y-8 animate-in fade-in slide-in-from-bottom-10 duration-1000">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs font-mono tracking-widest uppercase mb-4">
             <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-            DB Engine v2.5 Online
+            UnImage Engine v2.5 Online
           </div>
 
           <h1 className="font-serif text-6xl md:text-8xl lg:text-9xl font-medium tracking-tighter leading-[0.9] text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-stone-600">
@@ -108,7 +108,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp, hasKey, on
 
       {/* Footer */}
       <footer className="relative z-10 py-12 border-t border-white/5 text-center text-stone-600 text-sm font-mono">
-        <p>© 2024 DB Visual Engine. Powered by Google Gemini 2.5 & 3 Pro.</p>
+        <p>© 2024 UnImage. Powered by Google Gemini 2.5 & 3 Pro.</p>
       </footer>
     </div>
   );

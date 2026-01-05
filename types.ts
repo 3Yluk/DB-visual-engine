@@ -76,6 +76,7 @@ export interface AppState {
   // Fix: Added missing properties used in App.tsx for QA and prompt refinement
   suggestions: string[];
   selectedSuggestionIndices: number[];
+  selectedHistoryIndex: number;
 }
 
 export type AgentPromptGenerator = (previousContext: string) => string;
@@ -94,4 +95,34 @@ export interface ChatMessage {
   suggestions?: string[];
   selectedIndices?: number[];
   applied?: boolean;
+}
+
+// Pipeline Progress Types
+export enum PipelineStepStatus {
+  PENDING = 'pending',
+  RUNNING = 'running',
+  COMPLETED = 'completed',
+  ERROR = 'error'
+}
+
+export interface PipelineStep {
+  role: AgentRole;
+  name: string;
+  description: string;
+  status: PipelineStepStatus;
+  progress: number;
+  streamingContent: string;
+  finalContent: string;
+  startTime: number | null;
+  endTime: number | null;
+  error: string | null;
+}
+
+export interface PipelineProgress {
+  isRunning: boolean;
+  currentStepIndex: number;
+  steps: PipelineStep[];
+  totalProgress: number;
+  estimatedTimeRemaining: number | null;
+  startTime: number | null;
 }

@@ -28,28 +28,6 @@ export const AgentCard: React.FC<AgentCardProps> = ({ config, result, isActive, 
         </div>
 
         <div className="flex items-center gap-1.5">
-          {/* Regenerate Button */}
-          {onRegenerate && !isActive && (
-            <button
-              onClick={onRegenerate}
-              className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg transition-all"
-              title="重新生成"
-            >
-              <Icons.RefreshCw size={12} />
-            </button>
-          )}
-
-          {/* Copy Button */}
-          {content && (
-            <button
-              onClick={onCopy || (() => { navigator.clipboard.writeText(content); })}
-              className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg transition-all"
-              title="复制"
-            >
-              <Icons.CheckSquare size={12} />
-            </button>
-          )}
-
           {/* Status Indicators */}
           {isComplete && (
             <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold">
@@ -66,12 +44,12 @@ export const AgentCard: React.FC<AgentCardProps> = ({ config, result, isActive, 
       </div>
 
       {/* Editable Content */}
-      <div className="flex-1 min-h-0 pt-4 relative">
+      <div className="flex-1 min-h-0 pt-4 pb-16 relative">
         {content ? (
           <textarea
             value={content}
             onChange={(e) => onContentChange?.(e.target.value)}
-            className="absolute left-0 right-0 bottom-0 top-4 bg-stone-50 rounded-xl border border-stone-200 p-4 pb-20 text-[12px] font-mono leading-relaxed focus:ring-2 focus:ring-black/10 outline-none resize-none overflow-y-auto custom-scrollbar"
+            className="w-full h-full bg-stone-50 rounded-xl border border-stone-200 p-4 text-[12px] font-mono leading-relaxed focus:ring-2 focus:ring-black/10 outline-none resize-none overflow-y-auto custom-scrollbar"
             placeholder="等待分析结果..."
             spellCheck={false}
           />
@@ -87,19 +65,41 @@ export const AgentCard: React.FC<AgentCardProps> = ({ config, result, isActive, 
               <>
                 <Icons.Clock size={32} strokeWidth={1} />
                 <p className="text-sm italic">等待流水线信号...</p>
-                {onStartPipeline && (
-                  <button
-                    onClick={onStartPipeline}
-                    className="mt-4 px-6 py-2.5 bg-black text-white rounded-full text-xs font-bold hover:bg-stone-800 transition-all flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95"
-                  >
-                    <Icons.Play size={14} /> 启动深度扫描
-                  </button>
-                )}
               </>
             )}
           </div>
         )}
       </div>
+
+      {/* Bottom Actions */}
+      {content && (
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-stone-100 bg-white z-10">
+          <div className="flex items-center gap-2">
+            {/* Regenerate Button */}
+            {onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                disabled={isActive}
+                className="flex-1 py-2 bg-stone-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-40 hover:bg-stone-900 transition-all relative z-10"
+              >
+                {isActive ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.RefreshCw size={14} />}
+                重新生成
+              </button>
+            )}
+
+            {/* Copy Button */}
+            <button
+              onClick={onCopy || (() => { navigator.clipboard.writeText(content); })}
+              disabled={isActive}
+              className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 transition-all flex-shrink-0 relative z-10"
+              title="复制内容"
+            >
+              <Icons.CheckSquare size={14} />
+              复制
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

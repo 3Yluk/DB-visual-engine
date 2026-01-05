@@ -33,6 +33,18 @@ export const PromptLabModal: React.FC<PromptLabModalProps> = ({ isOpen, onClose 
         loadAllVersions();
     }, [isOpen]);
 
+    // Handle ESC key to close modal
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, [isOpen, onClose]);
+
     const loadAllVersions = () => {
         const allVers: Record<string, PromptVersion[]> = {};
         const actives: Record<string, string | null> = {};
@@ -173,8 +185,14 @@ export const PromptLabModal: React.FC<PromptLabModalProps> = ({ isOpen, onClose 
     const isActive = currentSelection && activeVersions[currentSelection.role] === currentSelection.versionId;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] overflow-hidden border border-stone-200 flex">
+        <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={onClose}
+        >
+            <div 
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] overflow-hidden border border-stone-200 flex"
+                onClick={(e) => e.stopPropagation()}
+            >
 
                 {/* Sidebar: Tree View */}
                 <div className="w-64 bg-stone-50 border-r border-stone-200 flex flex-col overflow-y-auto">
@@ -209,8 +227,8 @@ export const PromptLabModal: React.FC<PromptLabModalProps> = ({ isOpen, onClose 
                                                     key={ver.id}
                                                     onClick={() => selectVersion(role, ver.id)}
                                                     className={`w-full text-left px-2 py-1.5 text-xs rounded-lg mb-0.5 flex items-center gap-2 transition-all ${isSelected
-                                                            ? 'bg-stone-800 text-white'
-                                                            : 'text-stone-500 hover:bg-stone-100'
+                                                        ? 'bg-stone-800 text-white'
+                                                        : 'text-stone-500 hover:bg-stone-100'
                                                         }`}
                                                 >
                                                     {isActiveVer && (
@@ -228,7 +246,7 @@ export const PromptLabModal: React.FC<PromptLabModalProps> = ({ isOpen, onClose 
                 </div>
 
                 {/* Main Content */}
-                <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
 
                     {/* Toolbar */}
                     <div className="p-3 border-b border-stone-100 bg-white flex justify-between items-center">
@@ -298,12 +316,12 @@ export const PromptLabModal: React.FC<PromptLabModalProps> = ({ isOpen, onClose 
                     </div>
 
                     {/* Editor */}
-                    <div className="flex-1 p-4 bg-stone-50/50">
+                    <div className="flex-1 min-h-0 p-4 bg-stone-50/50 flex flex-col">
                         {currentVersion ? (
                             <textarea
                                 value={editorContent}
                                 onChange={(e) => setEditorContent(e.target.value)}
-                                className="w-full h-full p-6 bg-white border border-stone-200 rounded-xl text-sm font-mono resize-none focus:ring-2 focus:ring-black/5 outline-none custom-scrollbar leading-relaxed"
+                                className="flex-1 w-full p-6 bg-white border border-stone-200 rounded-xl text-sm font-mono resize-none focus:ring-2 focus:ring-black/5 outline-none custom-scrollbar leading-relaxed"
                                 placeholder="System prompt content..."
                             />
                         ) : (
@@ -326,8 +344,8 @@ export const PromptLabModal: React.FC<PromptLabModalProps> = ({ isOpen, onClose 
                                 onClick={handleSave}
                                 disabled={!hasUnsavedChanges}
                                 className={`px-6 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${hasUnsavedChanges
-                                        ? 'bg-black text-white hover:scale-105 shadow-xl'
-                                        : 'bg-stone-100 text-stone-300'
+                                    ? 'bg-black text-white hover:scale-105 shadow-xl'
+                                    : 'bg-stone-100 text-stone-300'
                                     }`}
                             >
                                 <Icons.Save size={14} />

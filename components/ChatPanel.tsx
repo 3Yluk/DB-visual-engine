@@ -87,13 +87,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                         <Icons.ScanEye size={10} className="inline mr-1" />质检
                     </button>
                     <button
-                        onClick={() => onSendMessage('翻译提示词')}
-                        disabled={isProcessing}
-                        className="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all disabled:opacity-40"
-                    >
-                        <Icons.Languages size={10} className="inline mr-1" />翻译
-                    </button>
-                    <button
                         onClick={() => onSendMessage('生成图片')}
                         disabled={isProcessing}
                         className="px-2.5 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-all disabled:opacity-40"

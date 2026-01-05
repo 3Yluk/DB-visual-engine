@@ -35,7 +35,14 @@ import {
     Edit2,
     Copy,
     Trash2,
-    CheckCircle
+    CheckCircle,
+    Globe,
+    Server,
+    ChevronUp,
+    ArrowLeft,
+    Volume2,
+    VolumeX,
+    ArrowLeftRight
 } from 'lucide-react';
 
 export const Icons = {
@@ -74,5 +81,12 @@ export const Icons = {
     Edit2,
     Copy,
     Trash2,
-    CheckCircle: CheckCircle2
+    CheckCircle: CheckCircle2,
+    Globe,
+    Server,
+    ChevronUp,
+    ArrowLeft,
+    Volume2,
+    VolumeX,
+    ArrowLeftRight
 };

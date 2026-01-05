@@ -17,7 +17,7 @@ export interface ReverseEngineeringResult {
 }
 
 let ai: GoogleGenAI | null = null;
-let currentConfig = { apiKey: '', baseUrl: '' };
+let currentConfig = { apiKey: '', baseUrl: '', mode: 'custom' as 'official' | 'custom' };
 
 // Default Model Configuration
 let modelConfig = {
@@ -31,25 +31,35 @@ const isQuotaError = (error: any): boolean => {
   return msg.includes("429") || msg.includes("quota") || msg.includes("limit");
 };
 
-export const configureClient = (apiKey: string, baseUrl: string) => {
-  if (!apiKey || !baseUrl) return;
-  currentConfig = { apiKey, baseUrl };
+export const configureClient = (apiKey: string, baseUrl: string, mode: 'official' | 'custom' = 'custom') => {
+  if (!apiKey) return;
+  if (mode === 'custom' && !baseUrl) return;
+  
+  currentConfig = { apiKey, baseUrl, mode };
 
-  // Google SDK expects the base API root (e.g. http://127.0.0.1:8045)
-  // Strip trailing /v1 if present
-  let finalUrl = baseUrl;
-  if (finalUrl.endsWith('/v1')) {
-    finalUrl = finalUrl.substring(0, finalUrl.length - 3);
-  } else if (finalUrl.endsWith('/v1/')) {
-    finalUrl = finalUrl.substring(0, finalUrl.length - 4);
-  }
-
-  ai = new GoogleGenAI({
-    apiKey: apiKey,
-    httpOptions: {
-      baseUrl: finalUrl
+  if (mode === 'official') {
+    // Official Google AI API
+    ai = new GoogleGenAI({
+      apiKey: apiKey
+    });
+  } else {
+    // Custom endpoint
+    // Google SDK expects the base API root (e.g. http://127.0.0.1:8045)
+    // Strip trailing /v1 if present
+    let finalUrl = baseUrl;
+    if (finalUrl.endsWith('/v1')) {
+      finalUrl = finalUrl.substring(0, finalUrl.length - 3);
+    } else if (finalUrl.endsWith('/v1/')) {
+      finalUrl = finalUrl.substring(0, finalUrl.length - 4);
     }
-  });
+
+    ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        baseUrl: finalUrl
+      }
+    });
+  }
 };
 
 export const configureModels = (config: { reasoning?: string; fast?: string; image?: string }) => {
@@ -79,8 +89,9 @@ const getClient = () => {
   if (!ai) {
     const storedKey = localStorage.getItem('berryxia_api_key');
     const storedUrl = localStorage.getItem('berryxia_base_url');
-    if (storedKey && storedUrl) {
-      configureClient(storedKey, storedUrl);
+    const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom';
+    if (storedKey) {
+      configureClient(storedKey, storedUrl || '', storedMode);
     }
   }
   if (!ai) throw new Error("Google AI Client not configured. Please set API Key and Endpoint.");
@@ -356,5 +367,49 @@ export async function executeReverseEngineering(
   } catch (error) {
     console.error("Reverse engineering failed:", error);
     return null;
+  }
+}
+
+// 单步骤逆向提示词生成（专门用于方法对比）
+export async function generatePromptOneShot(imageBase64: string, mimeType: string): Promise<string> {
+  const client = getClient();
+
+  try {
+    const cleanImage = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+    const result = await client.models.generateContent({
+      model: modelConfig.reasoning,
+      contents: [
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: cleanImage
+          }
+        },
+        {
+          text: `你是专业的视觉逆向工程专家。
+          请分析这张图片，生成一个可用于 Nano Banana Pro 的高质量提示词。
+
+          核心原则：
+          1. 识别并优先描述主体（如果是知名IP/产品，直接说名字）
+          2. 按重要性排序：主体 > 材质 > 光影 > 构图
+          3. 提取画面中的文字内容（用引号标注）
+          4. 直接输出提示词，不要解释过程
+
+          重点关注 Nano Banana Pro 的特性：
+          - 支持复杂的光影描述
+          - 材质渲染能力强
+          - 理解构图和空间关系
+
+          输出格式示例：
+          iPhone 15 Pro in Natural Titanium, brushed metal texture with micro scratches, studio lighting with soft shadows and rim light, floating at 45-degree angle, text "Pro" in silver, minimalist composition, 8K resolution, photorealistic`
+        }
+      ]
+    });
+
+    return result.text || '生成失败';
+  } catch (error) {
+    console.error('One-shot prompt generation failed:', error);
+    return '生成失败，请重试';
   }
 }

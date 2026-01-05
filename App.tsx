@@ -3,14 +3,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ImageUploader } from './components/ImageUploader';
 import { AgentCard } from './components/AgentCard';
 import { ImageViewer } from './components/ImageViewer';
+import { ImageComparisonSlider } from './components/ImageComparisonSlider';
+import { HistoryThumbnail } from './components/HistoryThumbnail';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { Icons } from './components/Icons';
 import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt } from './services/geminiService';
 import { saveHistoryItem, getHistory } from './services/historyService';
 import { detectSkillIntent, createUserMessage, createAssistantMessage, createSkillResultMessage, executeQualityCheck, executeRefineSkill, executeReverseSkill } from './services/chatService';
 import { promptManager, PromptVersion } from './services/promptManager';
+import { saveCurrentTask, loadCurrentTask, clearCurrentTask } from './services/cacheService';
+import { soundService } from './services/soundService';
+import { usePipelineProgress } from './hooks/usePipelineProgress';
+import { PipelineProgressView } from './components/PipelineProgressView';
 import { AGENTS, PIPELINE_ORDER } from './constants';
-import { AgentRole, AppState, HistoryItem, ChatMessage } from './types';
+import { AgentRole, AppState, HistoryItem, ChatMessage, PipelineStepStatus } from './types';
 import { ChatPanel } from './components/ChatPanel';
 import { LandingPage } from './components/LandingPage';
 import { DocumentationModal } from './components/DocumentationModal';
@@ -35,7 +41,8 @@ const INITIAL_STATE: AppState = {
   videoAnalysisDuration: null, isRefining: false, history: [], isHistoryOpen: false,
   layoutData: null, isAnalyzingLayout: false,
   suggestions: [], selectedSuggestionIndices: [],
-  promptCache: { CN: '', EN: '' }
+  promptCache: { CN: '', EN: '' },
+  selectedHistoryIndex: 0
 };
 
 type TabType = AgentRole.AUDITOR | AgentRole.DESCRIPTOR | AgentRole.ARCHITECT | 'STUDIO';
@@ -46,9 +53,10 @@ const App: React.FC = () => {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
   const [displayImage, setDisplayImage] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [activeTab, setActiveTab] = useState<TabType>(AgentRole.AUDITOR);
+  const [activeTab, setActiveTab] = useState<TabType>('STUDIO');
   const [refinementInput, setRefinementInput] = useState('');
   const [fullscreenImg, setFullscreenImg] = useState<string | null>(null);
+  const [isFullscreenComparison, setIsFullscreenComparison] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [isPromptLabOpen, setIsPromptLabOpen] = useState(false);
@@ -58,6 +66,67 @@ const App: React.FC = () => {
   const [isChatProcessing, setIsChatProcessing] = useState(false);
 
   const isPipelineRunning = useRef(false);
+
+  // 流水线进度管理
+  const {
+    progress: pipelineProgress,
+    initPipeline,
+    startStep,
+    updateStepContent,
+    completeStep,
+    errorStep,
+    completePipeline,
+    resetPipeline,
+    setProgressDirect
+  } = usePipelineProgress();
+
+  const [showProgressView, setShowProgressView] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(soundService.isEnabled());
+  const [reverseMode, setReverseMode] = useState<'full' | 'quick'>('quick'); // 'full' = 完整4步骤, 'quick' = 单步快速逆向
+
+  // Auto-save current task to cache whenever relevant state changes
+  useEffect(() => {
+    if (state.image) {
+      saveCurrentTask({
+        image: state.image,
+        mimeType: state.mimeType,
+        displayImage: displayImage,
+        detectedAspectRatio: state.detectedAspectRatio,
+        videoAnalysisDuration: state.videoAnalysisDuration,
+        results: state.results,
+        editablePrompt: state.editablePrompt,
+        generatedImage: state.generatedImage,
+        generatedImages: state.generatedImages,
+        layoutData: state.layoutData,
+        promptCache: state.promptCache,
+        selectedHistoryIndex: state.selectedHistoryIndex
+      });
+    }
+  }, [
+    state.image,
+    state.mimeType,
+    displayImage,
+    state.detectedAspectRatio,
+    state.videoAnalysisDuration,
+    state.results,
+    state.editablePrompt,
+    state.generatedImage,
+    state.generatedImages,
+    state.layoutData,
+    state.promptCache,
+    state.selectedHistoryIndex
+  ]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (showProgressView && e.key === 'Escape') {
+        setShowProgressView(false); // ESC 隐藏进度视图
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [showProgressView]);
 
   const showToast = (message: string, type: ToastType = 'info') => {
     const id = Date.now().toString();
@@ -84,7 +153,68 @@ const App: React.FC = () => {
         setHasKey(true);
       }
       const hist = await getHistory();
-      setState(prev => ({ ...prev, history: hist }));
+
+      // Load cached task state
+      const cached = loadCurrentTask();
+      if (cached) {
+        // 从 history 中提取所有 generatedImage，重建 generatedImages 数组
+        const generatedImages = hist
+          .filter(item => item.generatedImage)
+          .map(item => item.generatedImage);
+
+        setState(prev => ({
+          ...prev,
+          history: hist,
+          image: cached.image,
+          mimeType: cached.mimeType,
+          detectedAspectRatio: cached.detectedAspectRatio,
+          videoAnalysisDuration: cached.videoAnalysisDuration,
+          results: cached.results,
+          editablePrompt: cached.editablePrompt,
+          generatedImage: cached.generatedImage || (hist.length > 0 && hist[0].generatedImage ? hist[0].generatedImage : null),
+          generatedImages: generatedImages.length > 0 ? generatedImages : cached.generatedImages,
+          layoutData: cached.layoutData,
+          promptCache: cached.promptCache,
+          selectedHistoryIndex: cached.selectedHistoryIndex || 0
+        }));
+
+        if (cached.displayImage) {
+          setDisplayImage(cached.displayImage);
+        }
+
+        // 有缓存状态，跳过首页
+        setShowLanding(false);
+      } else {
+        // 从 history 中生成 generatedImages
+        const generatedImages = hist
+          .filter(item => item.generatedImage)
+          .map(item => item.generatedImage);
+
+        // 如果有历史记录，从最新的历史项恢复原始图片
+        if (hist.length > 0 && hist[0].originalImage) {
+          const latestItem = hist[0];
+          setDisplayImage(`data:${latestItem.mimeType || 'image/png'};base64,${latestItem.originalImage}`);
+          setState(prev => ({
+            ...prev,
+            history: hist,
+            image: latestItem.originalImage,
+            mimeType: latestItem.mimeType || 'image/png',
+            detectedAspectRatio: latestItem.detectedAspectRatio || '1:1',
+            generatedImages: generatedImages,
+            generatedImage: latestItem.generatedImage || null,
+            editablePrompt: latestItem.prompt || ''
+          }));
+
+          // 有历史记录，跳过首页
+          setShowLanding(false);
+        } else {
+          setState(prev => ({
+            ...prev,
+            history: hist,
+            generatedImages: generatedImages
+          }));
+        }
+      }
     };
     init();
   }, []);
@@ -101,7 +231,7 @@ const App: React.FC = () => {
       activeRole: null, // No agent is active yet (prevents "analyzing" animation)
       detectedAspectRatio: aspectRatio
     }));
-    setActiveTab(AgentRole.AUDITOR);
+    setActiveTab('STUDIO');
     isPipelineRunning.current = false;
   };
 
@@ -112,6 +242,7 @@ const App: React.FC = () => {
   const handleReset = () => {
     setDisplayImage(null);
     setState(prev => ({ ...INITIAL_STATE, history: prev.history }));
+    clearCurrentTask(); // Clear cache when starting new task
   };
 
   const handleAnalyzeLayout = async () => {
@@ -189,10 +320,25 @@ const App: React.FC = () => {
   const processImagePipeline = async () => {
     if (!state.image || isPipelineRunning.current) return;
     isPipelineRunning.current = true;
+
+    // 初始化进度
+    initPipeline();
+    setShowProgressView(true);
+    setActiveTab('STUDIO');
+
+    // 播放开始音效
+    soundService.playStart();
+
     let accumulatedContext = `[Ratio: ${state.detectedAspectRatio}]`;
+
     try {
-      for (const role of PIPELINE_ORDER) {
+      for (let i = 0; i < PIPELINE_ORDER.length; i++) {
+        const role = PIPELINE_ORDER[i];
+
+        // 开始步骤
+        startStep(i);
         if (role !== AgentRole.SYNTHESIZER) setActiveTab(role as TabType);
+
         setState(prev => ({
           ...prev, activeRole: role,
           results: { ...prev.results, [role]: { ...prev.results[role], content: '', isStreaming: true, isComplete: false } }
@@ -200,11 +346,20 @@ const App: React.FC = () => {
 
         let agentContent = "";
         const stream = streamAgentAnalysis(role, state.image!, accumulatedContext, state.mimeType);
+
+        // 流式更新
         for await (const chunk of stream) {
           agentContent += chunk;
+          updateStepContent(i, agentContent); // 更新进度视图
           setState(prev => ({ ...prev, results: { ...prev.results, [role]: { ...prev.results[role], content: agentContent } } }));
         }
+
         accumulatedContext += `\n\n--- ${role} ---\n${agentContent}\n`;
+
+        // 完成步骤
+        completeStep(i, agentContent);
+        soundService.playStepComplete();
+
         setState(prev => ({ ...prev, results: { ...prev.results, [role]: { ...prev.results[role], isStreaming: false, isComplete: true } } }));
 
         if (role === AgentRole.SYNTHESIZER) {
@@ -214,14 +369,30 @@ const App: React.FC = () => {
             promptCache: { ...prev.promptCache, CN: agentContent }
           }));
           pushPromptHistory(agentContent, '初始生成');
-          setActiveTab('STUDIO');
         }
 
         // Halt pipeline if error occurred
         if (agentContent.includes("[错误]") || agentContent.includes("[⚠️ 配额限制]")) {
+          errorStep(i, "API 错误或配额限制");
+          soundService.playError();
           break;
         }
       }
+
+      // 完成流水线
+      completePipeline();
+      soundService.playComplete();
+
+      // 延迟隐藏进度视图，显示打字机效果
+      setTimeout(() => {
+        setShowProgressView(false);
+        setActiveTab('STUDIO');
+        showToast("✨ 提示词生成完成！", "success");
+      }, 2000);
+
+    } catch (error) {
+      soundService.playError();
+      errorStep(pipelineProgress?.currentStepIndex || 0, String(error));
     } finally {
       setState(prev => ({ ...prev, isProcessing: false }));
       isPipelineRunning.current = false;
@@ -231,6 +402,134 @@ const App: React.FC = () => {
   useEffect(() => {
     if (state.isProcessing && !isPipelineRunning.current) processImagePipeline();
   }, [state.isProcessing]);
+
+  // 单步快速逆向
+  const handleQuickReverse = async () => {
+    if (!state.image || isPipelineRunning.current) return;
+    isPipelineRunning.current = true;
+    setState(prev => ({ ...prev, isProcessing: true }));
+
+    // 初始化单步骤进度
+    setShowProgressView(true);
+    setActiveTab('STUDIO');
+    soundService.playStart();
+
+    // 创建单步骤进度
+    setProgressDirect({
+      isRunning: true,
+      currentStepIndex: 0,
+      steps: [{
+        role: AgentRole.SYNTHESIZER,
+        name: AGENTS[AgentRole.SYNTHESIZER].name,
+        description: '单步快速逆向分析',
+        status: PipelineStepStatus.RUNNING,
+        progress: 0,
+        streamingContent: '',
+        finalContent: '',
+        startTime: Date.now(),
+        endTime: null,
+        error: null
+      }],
+      totalProgress: 0,
+      estimatedTimeRemaining: null,
+      startTime: Date.now()
+    });
+
+    try {
+      const { content, suggestions } = await executeReverseSkill(state.image, state.mimeType);
+
+      // 模拟流式更新
+      let displayedContent = '';
+      const chunks = content.match(/.{1,20}/g) || []; // 每20字符一个chunk
+
+      for (let i = 0; i < chunks.length; i++) {
+        displayedContent += chunks[i];
+        const progress = Math.round(((i + 1) / chunks.length) * 100);
+
+        const currentProgress = pipelineProgress;
+        if (currentProgress) {
+          const newSteps = [...currentProgress.steps];
+          newSteps[0] = {
+            ...newSteps[0],
+            streamingContent: displayedContent,
+            progress,
+            finalContent: displayedContent
+          };
+          setProgressDirect({
+            ...currentProgress,
+            steps: newSteps,
+            totalProgress: progress
+          });
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 30)); // 模拟流式效果
+      }
+
+      // 完成
+      const currentProgress = pipelineProgress;
+      if (currentProgress) {
+        const newSteps = [...currentProgress.steps];
+        newSteps[0] = {
+          ...newSteps[0],
+          status: PipelineStepStatus.COMPLETED,
+          progress: 100,
+          streamingContent: content,
+          finalContent: content,
+          endTime: Date.now()
+        };
+        setProgressDirect({
+          ...currentProgress,
+          isRunning: false,
+          steps: newSteps,
+          totalProgress: 100
+        });
+      }
+
+      // 使用建议作为提示词
+      const selectedSuggestion = suggestions && suggestions.length > 0 ? suggestions[0] : content;
+
+      setState(prev => ({
+        ...prev,
+        editablePrompt: selectedSuggestion,
+        promptCache: { ...prev.promptCache, CN: selectedSuggestion }
+      }));
+
+      pushPromptHistory(selectedSuggestion, '快速逆向');
+
+      soundService.playComplete();
+
+      // 延迟隐藏进度视图
+      setTimeout(() => {
+        setShowProgressView(false);
+        setActiveTab('STUDIO');
+        showToast("✨ 逆向完成！", "success");
+      }, 2000);
+
+    } catch (error) {
+      soundService.playError();
+
+      const currentProgress = pipelineProgress;
+      if (currentProgress) {
+        const newSteps = [...currentProgress.steps];
+        newSteps[0] = {
+          ...newSteps[0],
+          status: PipelineStepStatus.ERROR,
+          error: String(error),
+          endTime: Date.now()
+        };
+        setProgressDirect({
+          ...currentProgress,
+          steps: newSteps,
+          isRunning: false
+        });
+      }
+
+      showToast("逆向失败", "error");
+    } finally {
+      setState(prev => ({ ...prev, isProcessing: false }));
+      isPipelineRunning.current = false;
+    }
+  };
 
   const handleRunQA = async () => {
     if (!state.image || !state.generatedImage || state.isRefining) return;
@@ -295,11 +594,16 @@ const App: React.FC = () => {
           generatedImage: img,
           generatedImages: [img, ...prev.generatedImages],
           isGeneratingImage: false,
-          history: [newItem, ...prev.history]
+          history: [newItem, ...prev.history],
+          selectedHistoryIndex: 0
         }));
         setTimeout(() => handleRunQA(), 500);
       }
     } catch (e) { showToast("生成失败", 'error'); setState(prev => ({ ...prev, isGeneratingImage: false })); }
+  };
+
+  const setSelectedHistoryIndex = (index: number) => {
+    setState(prev => ({ ...prev, selectedHistoryIndex: index }));
   };
 
   // Handler to regenerate a single agent
@@ -473,13 +777,29 @@ const App: React.FC = () => {
   const renderTabContent = () => {
     if (activeTab === 'STUDIO') {
       return (
-        <div className="flex flex-col h-full bg-white">
+        <div className="flex flex-col h-full bg-white relative">
           {/* Header */}
           <div className="px-6 pt-5 pb-3 border-b border-stone-100 flex-shrink-0">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-stone-800 text-base font-serif">Prompt Studio</h3>
                 <p className="text-[10px] text-stone-400 font-medium uppercase mt-0.5">提示词编辑器</p>
+              </div>
+
+              {/* 模式切换器 */}
+              <div className="flex items-center gap-1 bg-stone-100 rounded-lg p-1">
+                <button
+                  onClick={() => setReverseMode('full')}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${reverseMode === 'full' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+                >
+                  完整分析
+                </button>
+                <button
+                  onClick={() => setReverseMode('quick')}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${reverseMode === 'quick' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+                >
+                  快速逆向
+                </button>
               </div>
               {/* Version Selector */}
               <div className="flex items-center gap-2">
@@ -530,14 +850,8 @@ const App: React.FC = () => {
                     )}
                   </div>
                 )}
-                <button onClick={() => handleRegenerateAgent(AgentRole.SYNTHESIZER)} disabled={!state.image || state.isProcessing} className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg disabled:opacity-40" title="重新生成">
-                  <Icons.RefreshCw size={12} />
-                </button>
                 <button onClick={handleToggleLanguage} className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg" title="翻译">
                   <Icons.Languages size={12} />
-                </button>
-                <button onClick={() => { navigator.clipboard.writeText(state.editablePrompt); showToast('已复制', 'success'); }} disabled={!state.editablePrompt} className="p-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 rounded-lg disabled:opacity-40" title="复制">
-                  <Icons.CheckSquare size={12} />
                 </button>
               </div>
             </div>
@@ -559,28 +873,84 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setState(prev => ({ ...prev, useReferenceImage: !prev.useReferenceImage }))}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all text-xs font-bold ${state.useReferenceImage ? 'bg-orange-100 text-orange-600' : 'bg-stone-100 text-stone-400'}`}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-all text-xs font-bold flex-shrink-0 ${state.useReferenceImage ? 'bg-orange-100 text-orange-600' : 'bg-stone-100 text-stone-400'}`}
                 title="图生图参考"
               >
                 <Icons.Image size={14} />
-                {state.useReferenceImage ? '参考原图' : '纯文生图'}
+                {state.useReferenceImage ? '参考' : '文生'}
+              </button>
+              <button
+                onClick={() => {
+                  if (reverseMode === 'quick') {
+                    // 快速逆向模式 - 单步骤
+                    handleQuickReverse();
+                  } else {
+                    // 完整分析模式 - 4个步骤
+                    // 检查三个字段是否为空
+                    const hasAuditorContent = state.results[AgentRole.AUDITOR]?.content?.trim();
+                    const hasDescriptorContent = state.results[AgentRole.DESCRIPTOR]?.content?.trim();
+                    const hasArchitectContent = state.results[AgentRole.ARCHITECT]?.content?.trim();
+
+                    if (!hasAuditorContent && !hasDescriptorContent && !hasArchitectContent) {
+                      // 三个字段都为空，基于原始图片生成
+                      if (state.image) {
+                        handleStartPipeline();
+                      } else {
+                        showToast('请先上传图片', 'error');
+                      }
+                    } else {
+                      // 有内容，重新生成 SYNTHESIZER
+                      handleRegenerateAgent(AgentRole.SYNTHESIZER);
+                    }
+                  }
+                }}
+                disabled={!state.image || state.isProcessing}
+                className="flex-1 py-2 bg-stone-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-40 hover:bg-stone-900 transition-all"
+                title={reverseMode === 'quick' ? '快速单步逆向' : '完整4步分析'}
+              >
+                <Icons.Sparkles size={14} />
+                生成提示词
               </button>
               <button
                 onClick={() => handleGenerateImage()}
                 disabled={state.isGeneratingImage || !state.editablePrompt}
-                className="flex-1 py-2.5 bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-40 hover:bg-stone-800 transition-all"
+                className="flex-1 py-2 bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-40 hover:bg-stone-800 transition-all"
               >
                 {state.isGeneratingImage ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.Play size={14} />}
-                复刻资产
+                生成图片
+              </button>
+              <button
+                onClick={() => { navigator.clipboard.writeText(state.editablePrompt); showToast('已复制', 'success'); }}
+                disabled={!state.editablePrompt}
+                className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 transition-all flex-shrink-0"
+                title="复制提示词"
+              >
+                <Icons.CheckSquare size={14} />
+                复制
               </button>
             </div>
           </div>
+
+          {/* 进度视图覆盖层 */}
+          {showProgressView && pipelineProgress && (
+            <PipelineProgressView
+              progress={pipelineProgress}
+              onHide={() => setShowProgressView(false)}
+              onCancel={() => {
+                // 取消流水线逻辑
+                resetPipeline();
+                setShowProgressView(false);
+                setState(prev => ({ ...prev, isProcessing: false }));
+                isPipelineRunning.current = false;
+              }}
+            />
+          )}
         </div>
       );
     }
     // Agent tabs (AUDITOR, DESCRIPTOR, ARCHITECT)
     return (
-      <div className="h-full overflow-hidden p-4">
+      <div className="h-full overflow-y-auto p-4 custom-scrollbar">
         <AgentCard
           config={AGENTS[activeTab as AgentRole]}
           result={state.results[activeTab as AgentRole]}
@@ -615,11 +985,42 @@ const App: React.FC = () => {
 
       {/* Fullscreen Overlay */}
       {fullscreenImg && (
-        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md flex items-center justify-center p-10 animate-in fade-in duration-300" onClick={() => setFullscreenImg(null)}>
-          <button className="absolute top-10 right-10 text-white/50 hover:text-white transition-colors z-[210] p-4"><Icons.X size={32} /></button>
-          <div className="w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            <img src={fullscreenImg} alt="Fullscreen View" className="max-w-[95%] max-h-[95%] object-contain shadow-[0_0_100px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none" />
-          </div>
+        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md animate-in fade-in duration-300" onClick={() => { setFullscreenImg(null); setIsFullscreenComparison(false); }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setFullscreenImg(null); setIsFullscreenComparison(false); }}
+            className="absolute top-10 right-10 text-white/50 hover:text-white transition-colors z-[210] p-4"
+          >
+            <Icons.X size={32} />
+          </button>
+          {isFullscreenComparison ? (
+            <div className="w-full h-full flex items-center justify-center gap-8 p-20" onClick={(e) => e.stopPropagation()}>
+              <div className="flex-1 h-full flex flex-col items-center justify-center">
+                <div className="text-white/50 text-sm mb-4 font-medium">ORIGINAL</div>
+                <img
+                  src={displayImage}
+                  alt="Original"
+                  className="max-w-full max-h-[85vh] object-contain shadow-[0_0_100px_rgba(0,0,0,0.5)] rounded-lg"
+                />
+              </div>
+              <div className="flex-1 h-full flex flex-col items-center justify-center">
+                <div className="text-white/50 text-sm mb-4 font-medium">GENERATED</div>
+                <img
+                  src={`data:image/png;base64,${state.generatedImages[state.selectedHistoryIndex]}`}
+                  alt="Generated"
+                  className="max-w-full max-h-[85vh] object-contain shadow-[0_0_100px_rgba(0,0,0,0.5)] rounded-lg"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center p-10" onClick={(e) => e.stopPropagation()}>
+              <img
+                src={fullscreenImg}
+                alt="Fullscreen View"
+                className="max-w-[95%] max-h-[95%] object-contain shadow-[0_0_100px_rgba(0,0,0,0.5)] rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -657,6 +1058,15 @@ const App: React.FC = () => {
                     key={item.id}
                     className="bg-stone-50 rounded-2xl p-4 space-y-3 hover:bg-stone-100 transition-colors cursor-pointer group"
                     onClick={() => {
+                      // 加载提示词到编辑器
+                      setState(prev => ({
+                        ...prev,
+                        editablePrompt: item.prompt,
+                        promptCache: { ...prev.promptCache, CN: item.prompt }
+                      }));
+                      setActiveTab('STUDIO');
+
+                      // 显示大图
                       if (item.generatedImage) {
                         setFullscreenImg(`data:image/png;base64,${item.generatedImage}`);
                       }
@@ -709,12 +1119,30 @@ const App: React.FC = () => {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-stone-200 h-16 flex items-center justify-between px-10">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowLanding(true)}>
           <div className="w-8 h-8 bg-black rounded flex items-center justify-center text-white shadow-xl"><Icons.Compass size={18} /></div>
-          <span className="font-serif font-bold text-xl tracking-tight text-stone-800">DB</span>
+          <span className="font-serif font-bold text-xl tracking-tight text-stone-800">UnImage</span>
         </div>
+
+        {/* 全局进度条 */}
+        {pipelineProgress?.isRunning && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-emerald-500 z-50 transition-all duration-300"
+            style={{ width: `${pipelineProgress.totalProgress}%` }}
+          />
+        )}
         <div className="flex items-center gap-2">
           <button onClick={() => setIsPromptLabOpen(true)} className="p-2.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-amber-500 transition-all" title="Prompt Lab"><Icons.Wand2 size={20} /></button>
           <button onClick={() => setIsHelpOpen(true)} className="p-2.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-orange-500 transition-all" title="帮助文档"><Icons.Help size={20} /></button>
           <button onClick={() => setState(prev => ({ ...prev, isHistoryOpen: true }))} className="p-2.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-black transition-all" title="历史记录"><Icons.History size={20} /></button>
+          <button
+            onClick={() => {
+              const newState = !soundEnabled;
+              setSoundEnabled(newState);
+              soundService.setEnabled(newState);
+            }}
+            className={`p-2.5 rounded-full hover:bg-stone-100 transition-all ${soundEnabled ? 'text-blue-500' : 'text-stone-300'}`}
+            title={soundEnabled ? '音效已启用' : '音效已关闭'}
+          >
+            {soundEnabled ? <Icons.Volume2 size={20} /> : <Icons.VolumeX size={20} />}
+          </button>
           <div className="w-px h-6 bg-stone-200 mx-1" />
           <button onClick={handleSelectKey} className={`p-2.5 rounded-full hover:bg-stone-100 ${hasKey ? 'text-emerald-500' : 'text-stone-300'}`} title="API Key 状态"><Icons.Key size={20} /></button>
         </div>
@@ -726,35 +1154,64 @@ const App: React.FC = () => {
           {!displayImage ? (
             <ImageUploader onImageSelected={handleFileSelected} disabled={state.isProcessing} />
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-4 space-y-6 animate-in slide-in-from-left duration-700">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <h2 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Source Reference</h2>
-                  <button onClick={handleReset} className="flex items-center gap-1.5 text-[9px] font-bold text-stone-400 hover:text-rose-500 transition-colors uppercase"><Icons.Plus size={10} /> New Task</button>
-                </div>
-                <ImageViewer
-                  src={displayImage}
-                  alt="Source"
-                  layoutData={state.layoutData}
-                  onToggleLayout={handleAnalyzeLayout}
-                  isAnalyzingLayout={state.isAnalyzingLayout}
-                  onFullscreen={() => setFullscreenImg(displayImage)}
-                />
+            <div className="flex flex-col h-full space-y-4 animate-in slide-in-from-left duration-700">
+
+              {/* 顶部：对比视图或原图 */}
+              <div className="flex-shrink-0">
+                {state.generatedImages.length > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <h2 className="text-[10px] font-bold text-orange-500 uppercase tracking-widest flex items-center gap-2">
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+                        Image Comparison
+                      </h2>
+                      <span className="text-[9px] text-stone-400 font-medium">
+                        {state.selectedHistoryIndex + 1} / {state.generatedImages.length}
+                      </span>
+                    </div>
+                    <ImageComparisonSlider
+                      beforeImage={displayImage}
+                      afterImage={`data:image/png;base64,${state.generatedImages[state.selectedHistoryIndex]}`}
+                      className="shadow-lg"
+                      layoutData={state.layoutData}
+                      onToggleLayout={handleAnalyzeLayout}
+                      isAnalyzingLayout={state.isAnalyzingLayout}
+                      onFullscreen={() => { setFullscreenImg(displayImage); setIsFullscreenComparison(true); }}
+                    />
+                  </>
+                ) : (
+                  /* 没有生成图时只显示原图 */
+                  <>
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <h2 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Original Image</h2>
+                    </div>
+                    <ImageViewer
+                      src={displayImage}
+                      alt="Source"
+                      layoutData={state.layoutData}
+                      onToggleLayout={handleAnalyzeLayout}
+                      isAnalyzingLayout={state.isAnalyzingLayout}
+                      onFullscreen={() => setFullscreenImg(displayImage)}
+                    />
+                  </>
+                )}
               </div>
-              {state.generatedImage && (
-                <div className="space-y-2 animate-in slide-in-from-top duration-500">
-                  <h2 className="text-[10px] font-bold text-orange-500 uppercase tracking-widest px-1 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" /> Latest Replica
+
+              {/* 下方：历史缩略图多宫格 */}
+              {state.generatedImages.length > 0 && (
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                  <h2 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-3 px-1">
+                    History ({state.generatedImages.length})
                   </h2>
-                  <ImageViewer src={`data:image/png;base64,${state.generatedImage}`} alt="Latest" className="border-orange-200 shadow-2xl ring-4 ring-orange-50" onFullscreen={() => setFullscreenImg(`data:image/png;base64,${state.generatedImage}`)} />
-                </div>
-              )}
-              {state.generatedImages.length > 1 && (
-                <div className="space-y-2">
-                  <h2 className="text-[10px] font-bold text-stone-400 uppercase tracking-widest px-1">Iteration History</h2>
-                  <div className="grid grid-cols-2 gap-3 pb-8">
-                    {state.generatedImages.slice(1).map((img, idx) => (
-                      <ImageViewer key={idx} src={`data:image/png;base64,${img}`} alt="Gen" onFullscreen={() => setFullscreenImg(`data:image/png;base64,${img}`)} />
+                  <div className="grid grid-cols-3 gap-3 pb-8">
+                    {state.generatedImages.map((img, index) => (
+                      <HistoryThumbnail
+                        key={index}
+                        imageUrl={`data:image/png;base64,${img}`}
+                        index={index}
+                        isActive={index === state.selectedHistoryIndex}
+                        onClick={() => setSelectedHistoryIndex(index)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -766,20 +1223,26 @@ const App: React.FC = () => {
         {/* Center: Agent Workbench */}
         <div className="col-span-5 flex flex-col min-h-0 h-full bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden relative">
           <div className="flex border-b border-stone-100 bg-stone-50 flex-shrink-0">
-            {['AUDITOR', 'DESCRIPTOR', 'ARCHITECT', 'STUDIO'].map((tid) => {
+            {['STUDIO', 'AUDITOR', 'DESCRIPTOR', 'ARCHITECT'].map((tid) => {
               const isStudio = tid === 'STUDIO';
               const roleKey = isStudio ? AgentRole.SYNTHESIZER : tid as AgentRole;
               const iconName = isStudio ? 'PenTool' : AGENTS[roleKey]?.icon;
               const IconComponent = Icons[iconName as keyof typeof Icons];
+              const result = state.results[roleKey];
+
+              // 获取当前步骤索引（如果流水线在运行）
+              const currentStepIndex = pipelineProgress?.currentStepIndex ?? -1;
+              const isCurrentStep = pipelineProgress?.steps[currentStepIndex]?.role === roleKey && pipelineProgress.isRunning;
+
               return (
                 <button key={tid} onClick={() => setActiveTab(tid as any)} className={`flex-1 px-4 py-4 flex flex-col items-center gap-1.5 relative border-r border-stone-100 last:border-r-0 transition-all ${activeTab === tid ? 'bg-white' : 'text-stone-400 hover:bg-stone-100/50'}`}>
                   <div className="relative">
-                    <div className={`p-1.5 rounded-lg transition-all ${activeTab === tid ? 'bg-black text-white scale-110 shadow-lg' : 'bg-stone-200'}`}>
-                      {state.results[roleKey]?.isStreaming ? <Icons.RefreshCw size={12} className="animate-spin" /> : IconComponent && <IconComponent size={12} />}
+                    <div className={`p-1.5 rounded-lg transition-all ${activeTab === tid ? 'bg-black text-white scale-110 shadow-lg' : isCurrentStep ? 'bg-blue-500 text-white' : 'bg-stone-200'}`}>
+                      {result?.isStreaming || isCurrentStep ? <Icons.RefreshCw size={12} className="animate-spin" /> : result?.isComplete ? <Icons.CheckCircle size={12} /> : IconComponent && <IconComponent size={12} />}
                     </div>
-                    {state.results[roleKey]?.isComplete && <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />}
+                    {result?.isComplete && <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />}
                   </div>
-                  <span className={`text-[8px] font-bold uppercase tracking-tight ${activeTab === tid ? 'text-black' : 'text-stone-500'}`}>{isStudio ? '工作室' : AGENTS[roleKey]?.name.split(' ')[0]}</span>
+                  <span className={`text-[8px] font-bold uppercase tracking-tight ${activeTab === tid ? 'text-black' : isCurrentStep ? 'text-blue-600' : 'text-stone-500'}`}>{isStudio ? '工作室' : AGENTS[roleKey]?.name.split(' ')[0]}</span>
                   {activeTab === tid && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />}
                 </button>
               );

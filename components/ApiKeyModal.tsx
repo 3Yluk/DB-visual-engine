@@ -10,6 +10,7 @@ interface ApiKeyModalProps {
 }
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => {
+  const [apiMode, setApiMode] = useState<'official' | 'custom'>('custom');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
 
@@ -25,16 +26,30 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
 
   useEffect(() => {
     if (isOpen) {
+      // Load API mode
+      const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom';
+      setApiMode(storedMode);
+
       // Load from localStorage or env
       const storedKey = localStorage.getItem('berryxia_api_key') || process.env.GEMINI_API_KEY || '';
       const storedUrl = localStorage.getItem('berryxia_base_url') || process.env.API_ENDPOINT || 'http://127.0.0.1:8045';
       setApiKey(storedKey);
       setBaseUrl(storedUrl);
 
-      // Load Models
-      const r = localStorage.getItem('berryxia_model_reasoning') || 'gemini-3-pro-high';
-      const f = localStorage.getItem('berryxia_model_fast') || 'gemini-3-flash';
-      const i = localStorage.getItem('berryxia_model_image') || 'gemini-3-pro-image';
+      // Load Models - different defaults for official vs custom
+      let defaultReasoning = 'gemini-3-pro-high';
+      let defaultFast = 'gemini-3-flash';
+      let defaultImage = 'gemini-3-pro-image';
+      
+      if (storedMode === 'official') {
+        defaultReasoning = 'gemini-2.0-flash-thinking-exp';
+        defaultFast = 'gemini-2.0-flash-exp';
+        defaultImage = 'imagen-3.0-generate-001';
+      }
+
+      const r = localStorage.getItem('berryxia_model_reasoning') || defaultReasoning;
+      const f = localStorage.getItem('berryxia_model_fast') || defaultFast;
+      const i = localStorage.getItem('berryxia_model_image') || defaultImage;
       setReasoningModel(r);
       setFastModel(f);
       setImageModel(i);
@@ -44,26 +59,40 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   if (!isOpen) return null;
 
   const handleTestConnection = async () => {
-    if (!apiKey || !baseUrl) {
+    if (!apiKey) {
       setStatus('error');
-      setStatusMsg("配置不能为空");
+      setStatusMsg("API Key 不能为空");
+      return;
+    }
+    if (apiMode === 'custom' && !baseUrl) {
+      setStatus('error');
+      setStatusMsg("自定义模式下 Endpoint 不能为空");
       return;
     }
     setIsTestLoading(true);
     setStatus('idle');
     try {
-      // Google SDK expects base API root, remove /v1 if present for cleanliness
-      let finalUrl = baseUrl;
-      if (finalUrl.endsWith('/v1')) {
-        finalUrl = finalUrl.substring(0, finalUrl.length - 3);
-      } else if (finalUrl.endsWith('/v1/')) {
-        finalUrl = finalUrl.substring(0, finalUrl.length - 4);
+      let client: GoogleGenAI;
+      
+      if (apiMode === 'official') {
+        // Official Google AI API - no custom baseUrl
+        client = new GoogleGenAI({
+          apiKey
+        });
+      } else {
+        // Custom endpoint
+        let finalUrl = baseUrl;
+        if (finalUrl.endsWith('/v1')) {
+          finalUrl = finalUrl.substring(0, finalUrl.length - 3);
+        } else if (finalUrl.endsWith('/v1/')) {
+          finalUrl = finalUrl.substring(0, finalUrl.length - 4);
+        }
+        
+        client = new GoogleGenAI({
+          apiKey,
+          httpOptions: { baseUrl: finalUrl }
+        });
       }
-
-      const client = new GoogleGenAI({
-        apiKey,
-        httpOptions: { baseUrl: finalUrl }
-      });
 
       // Use ai.models.generateContent per SDK docs
       await client.models.generateContent({
@@ -83,7 +112,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   };
 
   const handleSave = () => {
-    if (!apiKey || !baseUrl) return;
+    if (!apiKey) return;
+    if (apiMode === 'custom' && !baseUrl) return;
+    
+    // Save API mode
+    localStorage.setItem('berryxia_api_mode', apiMode);
     localStorage.setItem('berryxia_api_key', apiKey);
     localStorage.setItem('berryxia_base_url', baseUrl);
 
@@ -92,7 +125,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     localStorage.setItem('berryxia_model_fast', fastModel);
     localStorage.setItem('berryxia_model_image', imageModel);
 
-    configureClient(apiKey, baseUrl);
+    configureClient(apiKey, baseUrl, apiMode);
     configureModels({ reasoning: reasoningModel, fast: fastModel, image: imageModel });
 
     window.location.reload(); // Reload to ensure global state freshness
@@ -126,32 +159,88 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
         <div className="p-6 space-y-5 overflow-y-auto flex-1">
           {activeTab === 'connection' && (
             <>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">Target Endpoint</label>
-                <div className="relative">
-                  <Icons.Link size={14} className="absolute left-3 top-3 text-stone-400" />
-                  <input
-                    type="text"
-                    value={baseUrl}
-                    onChange={e => setBaseUrl(e.target.value)}
-                    placeholder="http://127.0.0.1:8045"
-                    className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
-                  />
+              {/* API Mode Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">API 模式</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setApiMode('official');
+                      setApiKey('');
+                      setReasoningModel('gemini-2.0-flash-thinking-exp');
+                      setFastModel('gemini-2.0-flash-exp');
+                      setImageModel('imagen-3.0-generate-001');
+                    }}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
+                      apiMode === 'official'
+                        ? 'bg-black text-white'
+                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <Icons.Globe size={16} />
+                      <span>官方 API</span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setApiMode('custom');
+                      setApiKey('');
+                      setReasoningModel('gemini-3-pro-high');
+                      setFastModel('gemini-3-flash');
+                      setImageModel('gemini-3-pro-image');
+                    }}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
+                      apiMode === 'custom'
+                        ? 'bg-black text-white'
+                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <Icons.Server size={16} />
+                      <span>自定义端点</span>
+                    </div>
+                  </button>
                 </div>
               </div>
 
+              {/* Custom Endpoint (only show in custom mode) */}
+              {apiMode === 'custom' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">Target Endpoint</label>
+                  <div className="relative">
+                    <Icons.Link size={14} className="absolute left-3 top-3 text-stone-400" />
+                    <input
+                      type="text"
+                      value={baseUrl}
+                      onChange={e => setBaseUrl(e.target.value)}
+                      placeholder="http://127.0.0.1:8045"
+                      className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* API Key */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">Access Key</label>
+                <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">
+                  {apiMode === 'official' ? 'Google AI API Key' : 'Access Key'}
+                </label>
                 <div className="relative">
                   <Icons.Key size={14} className="absolute left-3 top-3 text-stone-400" />
                   <input
                     type="password"
                     value={apiKey}
                     onChange={e => setApiKey(e.target.value)}
-                    placeholder="sk-..."
+                    placeholder={apiMode === 'official' ? 'AIza...' : 'sk-...'}
                     className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono focus:border-stone-400 outline-none transition-all"
                   />
                 </div>
+                {apiMode === 'official' && (
+                  <p className="text-[10px] text-stone-400 mt-1">
+                    从 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Google AI Studio</a> 获取 API Key
+                  </p>
+                )}
               </div>
             </>
           )}
