@@ -185,11 +185,11 @@ export const PromptLabModal: React.FC<PromptLabModalProps> = ({ isOpen, onClose 
     const isActive = currentSelection && activeVersions[currentSelection.role] === currentSelection.versionId;
 
     return (
-        <div 
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+        <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={onClose}
         >
-            <div 
+            <div
                 className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] overflow-hidden border border-stone-200 flex"
                 onClick={(e) => e.stopPropagation()}
             >

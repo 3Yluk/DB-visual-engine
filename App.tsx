@@ -18,6 +18,7 @@ import { PipelineProgressView } from './components/PipelineProgressView';
 import { AGENTS, PIPELINE_ORDER } from './constants';
 import { AgentRole, AppState, HistoryItem, ChatMessage, PipelineStepStatus } from './types';
 import { ChatPanel } from './components/ChatPanel';
+import { PanelHeader } from './components/PanelHeader';
 import { LandingPage } from './components/LandingPage';
 import { DocumentationModal } from './components/DocumentationModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
@@ -57,6 +58,7 @@ const App: React.FC = () => {
   const [refinementInput, setRefinementInput] = useState('');
   const [fullscreenImg, setFullscreenImg] = useState<string | null>(null);
   const [isFullscreenComparison, setIsFullscreenComparison] = useState(false);
+  const [isComparisonMode, setIsComparisonMode] = useState(true);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [isPromptLabOpen, setIsPromptLabOpen] = useState(false);
@@ -1212,135 +1214,142 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      <main className="pt-24 px-8 max-w-[1920px] mx-auto grid grid-cols-12 gap-8 h-[calc(100vh-6rem-8rem)] pb-4">
+      <main className="fixed top-24 bottom-28 left-8 right-8 max-w-[1920px] mx-auto grid grid-cols-12 gap-4 z-0">
         {/* Left Sidebar: Assets & References */}
-        <div className="col-span-4 flex flex-col h-full min-h-0 overflow-hidden relative">
-          {/* 上部分：图片区域 */}
-          <div className="flex-1 min-h-0 flex flex-col relative">
-            {!displayImage ? (
-              <div className="flex-1 flex flex-col relative">
-                <ImageUploader onImageSelected={handleFileSelected} disabled={state.isProcessing} />
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col h-full min-h-0 animate-in slide-in-from-left duration-700 space-y-2">
-
-                {/* 合并的顶部操作栏 */}
-                <div className="flex items-center justify-between px-1 flex-shrink-0">
-                  <h2 className="text-[10px] font-bold text-orange-500 uppercase tracking-widest flex items-center gap-2">
-                    <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
-                    {state.generatedImages.length > 0 ? 'Image Comparison' : 'Source Reference'}
-                    {state.generatedImages.length > 0 && (
-                      <span className="text-stone-400 font-normal ml-2">
-                        {state.selectedHistoryIndex + 1} / {state.generatedImages.length}
-                      </span>
-                    )}
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    {state.generatedImages.length > 0 && (
-                      <button
-                        onClick={() => handleDownloadHD(state.selectedHistoryIndex)}
-                        className="flex items-center gap-1.5 text-[9px] font-bold text-stone-400 hover:text-emerald-500 transition-colors uppercase"
-                        title="下载当前原图"
-                      >
-                        <Icons.Download size={10} /> Download
-                      </button>
-                    )}
+        <div className="col-span-4 flex flex-col h-full bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+          <PanelHeader title="Visual Assets">
+            <div className="flex items-center gap-2">
+              {state.generatedImages.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 mr-2 border-r border-stone-100 pr-3">
+                    <span className={`text-[9px] font-bold uppercase transition-colors ${isComparisonMode ? 'text-orange-500' : 'text-stone-300'}`}>Compare</span>
                     <button
-                      onClick={handleReset}
-                      className="flex items-center gap-1.5 text-[9px] font-bold text-stone-400 hover:text-rose-500 transition-colors uppercase"
+                      onClick={() => setIsComparisonMode(!isComparisonMode)}
+                      className={`w-7 h-4 rounded-full transition-colors flex items-center p-0.5 ${isComparisonMode ? 'bg-orange-500' : 'bg-stone-200 hover:bg-stone-300'}`}
                     >
-                      <Icons.Plus size={10} /> New Task
+                      <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${isComparisonMode ? 'translate-x-3' : 'translate-x-0'}`} />
                     </button>
                   </div>
-                </div>
 
-                {/* 对比视图或原图 */}
-                <div className="flex-1 min-h-0 relative rounded-xl overflow-hidden bg-stone-50 border border-stone-200">
-                  {state.generatedImages.length > 0 ? (
+                  <button
+                    onClick={() => handleDownloadHD(state.selectedHistoryIndex)}
+                    className="p-1.5 text-stone-400 hover:text-emerald-500 transition-colors rounded-lg hover:bg-emerald-50"
+                    title="Download HD"
+                  >
+                    <Icons.Download size={14} />
+                  </button>
+                </>
+              )}
+              <button
+                onClick={handleReset}
+                className="p-1.5 text-stone-400 hover:text-rose-500 transition-colors rounded-lg hover:bg-rose-50"
+                title="New Task"
+              >
+                <Icons.Plus size={14} />
+              </button>
+            </div>
+          </PanelHeader>
+
+          <div className="flex-1 min-h-0 relative">
+            {!displayImage ? (
+              <ImageUploader onImageSelected={handleFileSelected} disabled={state.isProcessing} />
+            ) : (
+              <div className="w-full h-full flex flex-col animate-in fade-in duration-500">
+                {state.generatedImages.length > 0 ? (
+                  isComparisonMode ? (
                     <ImageComparisonSlider
                       beforeImage={displayImage}
                       afterImage={`data:image/png;base64,${state.generatedImages[state.selectedHistoryIndex]}`}
-                      className="w-full h-full"
+                      className="w-full h-full border-0 rounded-none bg-stone-50/30"
                       layoutData={state.layoutData}
                       onToggleLayout={handleAnalyzeLayout}
                       isAnalyzingLayout={state.isAnalyzingLayout}
                       onFullscreen={() => { setFullscreenImg(displayImage); setIsFullscreenComparison(true); }}
                     />
                   ) : (
-                    /* 没有生成图时只显示原图 */
-                    <>
-                      <div className="absolute top-3 left-3 z-10">
-                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest bg-black/50 text-white px-2 py-1 rounded backdrop-blur-md">Original Image</span>
-                      </div>
-                      <ImageViewer
-                        src={displayImage}
-                        alt="Source"
-                        className="w-full h-full border-0 rounded-none bg-transparent"
-                        layoutData={state.layoutData}
-                        onToggleLayout={handleAnalyzeLayout}
-                        isAnalyzingLayout={state.isAnalyzingLayout}
-                        onFullscreen={() => setFullscreenImg(displayImage)}
-                      />
-                    </>
-                  )}
-                </div>
+                    <ImageViewer
+                      src={`data:image/png;base64,${state.generatedImages[state.selectedHistoryIndex]}`}
+                      alt="Generated Result"
+                      className="w-full h-full border-0 rounded-none bg-stone-50/30"
+                      layoutData={state.layoutData}
+                      onToggleLayout={handleAnalyzeLayout}
+                      isAnalyzingLayout={state.isAnalyzingLayout}
+                      onFullscreen={() => setFullscreenImg(`data:image/png;base64,${state.generatedImages[state.selectedHistoryIndex]}`)}
+                    />
+                  )
+                ) : (
+                  <ImageViewer
+                    src={displayImage}
+                    alt="Source"
+                    className="w-full h-full border-0 rounded-none bg-stone-50/30"
+                    layoutData={state.layoutData}
+                    onToggleLayout={handleAnalyzeLayout}
+                    isAnalyzingLayout={state.isAnalyzingLayout}
+                    onFullscreen={() => setFullscreenImg(displayImage)}
+                  />
+                )}
               </div>
             )}
           </div>
         </div>
 
         {/* Center: Agent Workbench */}
-        <div className="col-span-5 flex flex-col min-h-0 h-full bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden relative">
-          <div className="flex border-b border-stone-100 bg-stone-50 flex-shrink-0">
-            {['STUDIO', 'AUDITOR', 'DESCRIPTOR', 'ARCHITECT'].map((tid) => {
-              const isStudio = tid === 'STUDIO';
-              const roleKey = isStudio ? AgentRole.SYNTHESIZER : tid as AgentRole;
-              const iconName = isStudio ? 'PenTool' : AGENTS[roleKey]?.icon;
-              const IconComponent = Icons[iconName as keyof typeof Icons];
-              const result = state.results[roleKey];
+        <div className="col-span-5 flex flex-col h-full bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden relative">
+          <PanelHeader title="Workbench">
+            <div className="flex items-center bg-stone-100 p-0.5 rounded-lg">
+              {['STUDIO', 'AUDITOR', 'DESCRIPTOR', 'ARCHITECT'].map((tid) => {
+                const isStudio = tid === 'STUDIO';
+                const roleKey = isStudio ? AgentRole.SYNTHESIZER : tid as AgentRole;
+                const iconName = isStudio ? 'PenTool' : AGENTS[roleKey]?.icon;
+                const IconComponent = Icons[iconName as keyof typeof Icons];
+                const result = state.results[roleKey];
+                const currentStepIndex = pipelineProgress?.currentStepIndex ?? -1;
+                const isCurrentStep = pipelineProgress?.steps[currentStepIndex]?.role === roleKey && pipelineProgress.isRunning;
 
-              // 获取当前步骤索引（如果流水线在运行）
-              const currentStepIndex = pipelineProgress?.currentStepIndex ?? -1;
-              const isCurrentStep = pipelineProgress?.steps[currentStepIndex]?.role === roleKey && pipelineProgress.isRunning;
-
-              return (
-                <button key={tid} onClick={() => setActiveTab(tid as any)} className={`flex-1 px-4 py-4 flex flex-col items-center gap-1.5 relative border-r border-stone-100 last:border-r-0 transition-all ${activeTab === tid ? 'bg-white' : 'text-stone-400 hover:bg-stone-100/50'}`}>
-                  <div className="relative">
-                    <div className={`p-1.5 rounded-lg transition-all ${activeTab === tid ? 'bg-black text-white scale-110 shadow-lg' : isCurrentStep ? 'bg-blue-500 text-white' : 'bg-stone-200'}`}>
-                      {result?.isStreaming || isCurrentStep ? <Icons.RefreshCw size={12} className="animate-spin" /> : result?.isComplete ? <Icons.CheckCircle size={12} /> : IconComponent && <IconComponent size={12} />}
+                return (
+                  <button
+                    key={tid}
+                    onClick={() => setActiveTab(tid as any)}
+                    className={`relative px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 ${activeTab === tid ? 'bg-white shadow-sm text-black' : 'text-stone-400 hover:text-stone-600'}`}
+                  >
+                    <div className={isCurrentStep ? 'text-blue-500 animate-pulse' : ''}>
+                      {result?.isStreaming ? <Icons.RefreshCw size={12} className="animate-spin" /> : IconComponent && <IconComponent size={12} />}
                     </div>
-                    {result?.isComplete && <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />}
-                  </div>
-                  <span className={`text-[8px] font-bold uppercase tracking-tight ${activeTab === tid ? 'text-black' : isCurrentStep ? 'text-blue-600' : 'text-stone-500'}`}>{isStudio ? '工作室' : AGENTS[roleKey]?.name.split(' ')[0]}</span>
-                  {activeTab === tid && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />}
-                </button>
-              );
-            })}
-          </div>
+                    <span className="text-[10px] font-bold uppercase tracking-tight">{isStudio ? 'Studio' : AGENTS[roleKey]?.name.split(' ')[0]}</span>
+                    {result?.isComplete && <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-emerald-500 rounded-full border border-white" />}
+                  </button>
+                );
+              })}
+            </div>
+          </PanelHeader>
+
           <div className="flex-1 min-h-0 bg-white relative">
             {!state.image ? (
               <div className="h-full flex flex-col items-center justify-center text-stone-200 space-y-4">
-                <Icons.Compass size={48} strokeWidth={1} className="animate-spin duration-10000" />
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Visual Decoding Standby</p>
+                <Icons.Compass size={48} strokeWidth={1} className="animate-spin duration-10000 opacity-20" />
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-50">Visual Decoding Standby</p>
               </div>
             ) : renderTabContent()}
           </div>
         </div>
 
         {/* Right Sidebar: AI Chat */}
-        <div className="col-span-3 h-full flex flex-col bg-white border border-stone-200 rounded-3xl overflow-hidden shadow-sm">
-          <ChatPanel
-            messages={chatMessages}
-            onSendMessage={handleChatSendMessage}
-            onApplySuggestions={handleApplySuggestions}
-            onToggleSuggestion={handleToggleSuggestion}
-            isProcessing={isChatProcessing}
-          />
+        <div className="col-span-3 flex flex-col h-full bg-white border border-stone-200 rounded-xl overflow-hidden shadow-sm">
+          <PanelHeader title="AI Assistant" />
+          <div className="flex-1 min-h-0 relative">
+            <ChatPanel
+              messages={chatMessages}
+              onSendMessage={handleChatSendMessage}
+              onApplySuggestions={handleApplySuggestions}
+              onToggleSuggestion={handleToggleSuggestion}
+              isProcessing={isChatProcessing}
+            />
+          </div>
         </div>
       </main>
 
       {/* Persistence History Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 h-32 bg-white/95 backdrop-blur-md border-t border-stone-200 z-[100] transform transition-transform duration-300 ease-in-out px-10 flex items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+      <div className="fixed bottom-0 left-0 right-0 h-24 bg-white/95 backdrop-blur-md border-t border-stone-200 z-40 transform transition-transform duration-300 ease-in-out px-10 flex items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
         {/* Title Tag */}
         <div className="absolute top-0 left-10 -translate-y-1/2 bg-stone-800 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-widest flex items-center gap-1.5">
           <Icons.History size={10} />
@@ -1354,9 +1363,9 @@ const App: React.FC = () => {
             <span className="text-xs font-medium">No history records</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1 overflow-x-auto overflow-y-hidden w-full h-full py-4 custom-scrollbar px-4">
+          <div className="flex items-center gap-1 overflow-x-auto overflow-y-hidden w-full h-full py-2 custom-scrollbar px-4">
             {state.generatedImages.map((img, index) => (
-              <div key={index} className="flex-shrink-0 w-24 h-24">
+              <div key={index} className="flex-shrink-0 w-20 h-20">
                 <HistoryThumbnail
                   imageUrl={`data:image/png;base64,${img}`}
                   index={index}
@@ -1382,7 +1391,6 @@ const App: React.FC = () => {
                     }
                   }}
                   onDelete={() => handleDeleteHistoryItem(index)}
-                  onDownloadHD={() => handleDownloadHD(index)}
                 />
               </div>
             ))}

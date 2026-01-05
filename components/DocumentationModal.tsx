@@ -49,7 +49,7 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, 
   ];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-stone-200" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-stone-100 flex justify-between items-center bg-stone-50">
           <div className="flex items-center gap-3">
