@@ -7,7 +7,7 @@ import { ImageComparisonSlider } from './components/ImageComparisonSlider';
 import { HistoryThumbnail } from './components/HistoryThumbnail';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { Icons } from './components/Icons';
-import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt } from './services/geminiService';
+import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt, executeSmartAnalysis } from './services/geminiService';
 import { saveHistoryItem, getHistory, deleteHistoryItemById } from './services/historyService';
 import { detectSkillIntent, createUserMessage, createAssistantMessage, createSkillResultMessage, executeQualityCheck, executeRefineSkill, executeReverseSkill } from './services/chatService';
 import { promptManager, PromptVersion } from './services/promptManager';
@@ -85,6 +85,12 @@ const App: React.FC = () => {
   });
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
   const [isGlobalDragging, setIsGlobalDragging] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const analyzeAbortRef = useRef<AbortController | null>(null);
+
+  // Synchronized image zoom state
+  const [imageZoom, setImageZoom] = useState({ scale: 1, panX: 0, panY: 0 });
+  const imageContainerRef = useRef<HTMLDivElement>(null);
 
   const isPipelineRunning = useRef(false);
 
@@ -211,6 +217,47 @@ const App: React.FC = () => {
       window.removeEventListener('drop', handleDrop);
     };
   }, []);
+
+  // Handle image zoom with mouse wheel (Figma-style: zoom centered on pointer)
+  const handleImageZoom = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+
+    // Mouse position relative to container center (in pixels)
+    const mouseX = e.clientX - rect.left - rect.width / 2;
+    const mouseY = e.clientY - rect.top - rect.height / 2;
+
+    // Zoom direction and factor
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+    const oldScale = imageZoom.scale;
+    const newScale = Math.max(1, Math.min(4, oldScale * zoomFactor));
+
+    if (newScale === oldScale) return;
+
+    // Figma-style zoom: keep the point under cursor fixed
+    // Formula: newOffset = mousePos - (mousePos - oldOffset) * (newScale / oldScale)
+    const scaleRatio = newScale / oldScale;
+    const newPanX = mouseX - (mouseX - imageZoom.panX) * scaleRatio;
+    const newPanY = mouseY - (mouseY - imageZoom.panY) * scaleRatio;
+
+    // When scale is 1, reset to center
+    if (newScale === 1) {
+      setImageZoom({ scale: 1, panX: 0, panY: 0 });
+    } else {
+      setImageZoom({
+        scale: newScale,
+        panX: newPanX,
+        panY: newPanY
+      });
+    }
+  };
+
+  // Reset zoom when image changes
+  useEffect(() => {
+    setImageZoom({ scale: 1, panX: 0, panY: 0 });
+  }, [displayImage, state.generatedImage]);
 
   // Auto-save current task to cache whenever relevant state changes
   useEffect(() => {
@@ -1193,39 +1240,92 @@ const App: React.FC = () => {
             </div>
 
             {/* AI Input Row */}
-            <div className="flex items-center gap-2 bg-stone-800 rounded-xl p-2 border border-stone-700">
-              <input
-                type="text"
+            <div className="relative bg-stone-800 rounded-xl p-3 border border-stone-700">
+              <textarea
+                ref={(el) => {
+                  if (el) {
+                    el.style.height = 'auto';
+                    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+                  }
+                }}
                 value={aiInput}
-                onChange={(e) => setAiInput(e.target.value)}
+                onChange={(e) => {
+                  setAiInput(e.target.value);
+                  // Auto-resize
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey && aiInput.trim()) {
+                    e.preventDefault();
                     handleChatSendMessage(aiInput.trim());
                     setAiInput('');
                     setIsChatDrawerOpen(true);
                   }
                 }}
-                placeholder="输入 AI 指令...（例如：把光影描述改得更柔和）"
-                className="flex-1 bg-transparent border-none text-sm outline-none text-stone-200 placeholder:text-stone-500"
-                disabled={isChatProcessing}
+                placeholder={isAnalyzing ? "正在分析差异..." : "输入 AI 指令..."}
+                className={`w-full bg-transparent border-none text-sm outline-none text-stone-200 placeholder:text-stone-500 resize-none min-h-[24px] max-h-[120px] leading-relaxed pr-24 ${isAnalyzing ? 'placeholder:animate-pulse' : ''}`}
+                disabled={isChatProcessing || isAnalyzing}
+                rows={1}
               />
-              <button
-                onClick={() => {
-                  if (aiInput.trim()) {
-                    handleChatSendMessage(aiInput.trim());
-                    setAiInput('');
-                    setIsChatDrawerOpen(true);
-                  }
-                }}
-                disabled={!aiInput.trim() || isChatProcessing}
-                className="p-2 bg-stone-700 text-white rounded-lg disabled:opacity-40 transition-all hover:bg-stone-600"
-              >
-                {isChatProcessing ? (
-                  <Icons.RefreshCw size={16} className="animate-spin" />
+              {/* Buttons fixed at bottom-right */}
+              <div className="absolute bottom-2 right-2 flex items-center gap-2">
+                {isAnalyzing ? (
+                  <button
+                    onClick={() => {
+                      setIsAnalyzing(false);
+                      setAiInput('');
+                    }}
+                    className="px-2 py-1 bg-rose-900/30 hover:bg-rose-900/50 text-rose-400 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                    title="取消分析"
+                  >
+                    <Icons.X size={12} />
+                  </button>
                 ) : (
-                  <Icons.ChevronRight size={16} />
+                  <button
+                    onClick={async () => {
+                      if (!state.image || !state.generatedImage) return;
+                      setIsAnalyzing(true);
+                      setAiInput('');
+                      try {
+                        const suggestion = await executeSmartAnalysis(
+                          state.image,
+                          state.generatedImage,
+                          state.editablePrompt
+                        );
+                        setAiInput(prev => prev === '' ? suggestion : prev);
+                      } catch (e) {
+                        setAiInput('分析失败，请重试');
+                      } finally {
+                        setIsAnalyzing(false);
+                      }
+                    }}
+                    disabled={!state.image || !state.generatedImage || isChatProcessing}
+                    className="p-1.5 bg-violet-900/30 hover:bg-violet-900/50 text-violet-400 rounded-lg disabled:opacity-40 transition-all"
+                    title="智能分析"
+                  >
+                    <Icons.Sparkles size={14} />
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={() => {
+                    if (aiInput.trim()) {
+                      handleChatSendMessage(aiInput.trim());
+                      setAiInput('');
+                      setIsChatDrawerOpen(true);
+                    }
+                  }}
+                  disabled={!aiInput.trim() || isChatProcessing}
+                  className="p-1.5 bg-stone-700 text-white rounded-lg disabled:opacity-40 transition-all hover:bg-stone-600"
+                  title="发送"
+                >
+                  {isChatProcessing ? (
+                    <Icons.RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <Icons.ArrowUp size={14} />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1509,6 +1609,8 @@ const App: React.FC = () => {
                       onToggleLayout={handleAnalyzeLayout}
                       isAnalyzingLayout={state.isAnalyzingLayout}
                       onFullscreen={() => { setFullscreenImg(displayImage); setIsFullscreenComparison(true); }}
+                      zoom={imageZoom}
+                      onZoom={handleImageZoom}
                     />
                   ) : (
                     <ImageViewer
@@ -1519,6 +1621,8 @@ const App: React.FC = () => {
                       onToggleLayout={handleAnalyzeLayout}
                       isAnalyzingLayout={state.isAnalyzingLayout}
                       onFullscreen={() => setFullscreenImg(`data:image/png;base64,${state.generatedImages[state.selectedHistoryIndex]}`)}
+                      zoom={imageZoom}
+                      onZoom={handleImageZoom}
                     />
                   )
                 ) : (
@@ -1530,6 +1634,8 @@ const App: React.FC = () => {
                     onToggleLayout={handleAnalyzeLayout}
                     isAnalyzingLayout={state.isAnalyzingLayout}
                     onFullscreen={() => setFullscreenImg(displayImage)}
+                    zoom={imageZoom}
+                    onZoom={handleImageZoom}
                   />
                 )}
               </div>
@@ -1558,6 +1664,14 @@ const App: React.FC = () => {
                 const currentStepIndex = pipelineProgress?.currentStepIndex ?? -1;
                 const isCurrentStep = pipelineProgress?.steps[currentStepIndex]?.role === roleKey && pipelineProgress.isRunning;
 
+                // Short tab labels
+                const tabLabels: Record<string, string> = {
+                  'STUDIO': 'Studio',
+                  'AUDITOR': '场景',
+                  'DESCRIPTOR': '材质',
+                  'ARCHITECT': '构图'
+                };
+
                 return (
                   <button
                     key={tid}
@@ -1567,7 +1681,7 @@ const App: React.FC = () => {
                     <div className={isCurrentStep ? 'text-blue-400 animate-pulse' : ''}>
                       {result?.isStreaming ? <Icons.RefreshCw size={12} className="animate-spin" /> : IconComponent && <IconComponent size={12} />}
                     </div>
-                    <span className="text-[10px] font-bold uppercase tracking-tight">{isStudio ? 'Studio' : AGENTS[roleKey]?.name.split(' ')[0]}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-tight">{tabLabels[tid]}</span>
                     {result?.isComplete && <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-emerald-500 rounded-full border border-stone-800" />}
                   </button>
                 );

@@ -4,6 +4,12 @@ import { Icons } from './Icons';
 import { LayoutOverlay } from './LayoutOverlay';
 import { LayoutElement } from '../types';
 
+interface ImageZoom {
+  scale: number;
+  panX: number;
+  panY: number;
+}
+
 interface ImageViewerProps {
   src: string;
   alt: string;
@@ -12,6 +18,8 @@ interface ImageViewerProps {
   onToggleLayout?: () => void;
   isAnalyzingLayout?: boolean;
   onFullscreen?: () => void;
+  zoom?: ImageZoom;
+  onZoom?: (e: React.WheelEvent<HTMLDivElement>) => void;
 }
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
@@ -21,20 +29,41 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   layoutData,
   onToggleLayout,
   isAnalyzingLayout,
-  onFullscreen
+  onFullscreen,
+  zoom = { scale: 1, panX: 0, panY: 0 },
+  onZoom
 }) => {
   const imgRef = useRef<HTMLImageElement>(null);
 
+  const transformStyle = zoom.scale > 1
+    ? {
+      transform: `translate(${zoom.panX}px, ${zoom.panY}px) scale(${zoom.scale})`,
+      transformOrigin: 'center center'
+    }
+    : {};
+
   return (
-    <div className={`relative group overflow-hidden rounded-xl border border-stone-700 bg-stone-950 transition-all h-full w-full ${className}`}>
+    <div
+      className={`relative group overflow-hidden rounded-xl border border-stone-700 bg-stone-950 transition-all h-full w-full ${className}`}
+      onWheel={onZoom}
+    >
       <img
         ref={imgRef}
         src={src}
         alt={alt}
-        className="w-full h-full object-contain block"
+        className="w-full h-full object-contain block transition-transform duration-100"
+        style={transformStyle}
+        draggable={false}
       />
 
       {layoutData && <LayoutOverlay data={layoutData} show={true} />}
+
+      {/* Zoom indicator */}
+      {zoom.scale > 1 && (
+        <div className="absolute top-3 left-3 px-2 py-1 bg-black/60 backdrop-blur rounded-lg text-[10px] font-bold text-white">
+          {Math.round(zoom.scale * 100)}%
+        </div>
+      )}
 
       {/* 浮动工具栏：全屏按钮修复 */}
       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">

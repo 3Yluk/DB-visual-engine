@@ -34,7 +34,7 @@ const isQuotaError = (error: any): boolean => {
 export const configureClient = (apiKey: string, baseUrl: string, mode: 'official' | 'custom' = 'custom') => {
   if (!apiKey) return;
   if (mode === 'custom' && !baseUrl) return;
-  
+
   currentConfig = { apiKey, baseUrl, mode };
 
   if (mode === 'official') {
@@ -214,6 +214,54 @@ export async function* streamConsistencyCheck(originalImage: string, generatedIm
     }
   } catch (error) { yield "质检不可用。"; }
 }
+
+// Smart Analysis: Returns direct modification suggestion for the prompt
+export async function executeSmartAnalysis(
+  originalImage: string,
+  generatedImage: string,
+  currentPrompt: string
+): Promise<string> {
+  const client = getClient();
+  const modelId = modelConfig.fast;
+
+  const systemPrompt = `你是一个视觉差异分析专家。
+
+你的任务：对比原图和生成图之间的差异，给出**一句话的修改指令**，让用户可以直接用这个指令来修改提示词。
+
+**输入：**
+1. 原图（参考目标）
+2. 生成图（当前结果）
+3. 当前使用的提示词
+
+**输出要求：**
+- 只输出**一句简洁的修改指令**（中文）
+- 直接说明要怎么改，例如："把光线改为更柔和的漫射光"、"增加背景的暖色调"、"让人物表情更自然"
+- 不要输出分析报告、评分或解释
+- 如果生成效果已经很好，就说"当前效果已接近原图，可以微调细节"
+
+**当前提示词：**
+${currentPrompt}`;
+
+  try {
+    const cleanOriginal = originalImage.replace(/^data:image\/\w+;base64,/, "");
+    const cleanGenerated = generatedImage.replace(/^data:image\/\w+;base64,/, "");
+
+    const response = await client.models.generateContent({
+      model: modelId,
+      contents: [
+        { inlineData: { mimeType: "image/jpeg", data: cleanOriginal } },
+        { inlineData: { mimeType: "image/png", data: cleanGenerated } },
+        systemPrompt
+      ]
+    });
+
+    return response.text?.trim() || "无法分析差异";
+  } catch (error) {
+    console.error("Smart analysis error:", error);
+    return "分析失败，请重试";
+  }
+}
+
 
 export async function refinePromptWithFeedback(
   originalPrompt: string,

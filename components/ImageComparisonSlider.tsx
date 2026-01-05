@@ -3,6 +3,12 @@ import { Icons } from './Icons';
 import { LayoutOverlay } from './LayoutOverlay';
 import { LayoutElement } from '../types';
 
+interface ImageZoom {
+  scale: number;
+  panX: number;
+  panY: number;
+}
+
 interface ImageComparisonSliderProps {
   beforeImage: string;
   afterImage: string;
@@ -13,6 +19,8 @@ interface ImageComparisonSliderProps {
   onToggleLayout?: () => void;
   isAnalyzingLayout?: boolean;
   onFullscreen?: () => void;
+  zoom?: ImageZoom;
+  onZoom?: (e: React.WheelEvent<HTMLDivElement>) => void;
 }
 
 export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
@@ -25,6 +33,8 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
   onToggleLayout,
   isAnalyzingLayout,
   onFullscreen,
+  zoom = { scale: 1, panX: 0, panY: 0 },
+  onZoom,
 }) => {
   const [sliderPosition, setSliderPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
@@ -87,20 +97,29 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
     }
   }, [isDragging]);
 
+  const transformStyle = zoom.scale > 1
+    ? {
+      transform: `translate(${zoom.panX}px, ${zoom.panY}px) scale(${zoom.scale})`,
+      transformOrigin: 'center center'
+    }
+    : {};
+
   // Side-by-side mode
   if (useSideBySide) {
     return (
       <div
         ref={containerRef}
         className={`relative rounded-xl border border-stone-700 bg-stone-950 overflow-hidden select-none group h-full w-full ${className}`}
+        onWheel={onZoom}
       >
         <div className="absolute inset-0 flex">
           {/* Before Image */}
-          <div className="flex-1 relative border-r border-stone-700">
+          <div className="flex-1 relative border-r border-stone-700 overflow-hidden">
             <img
               src={beforeImage}
               alt={beforeLabel}
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain transition-transform duration-100"
+              style={transformStyle}
               draggable={false}
             />
             <div className="absolute top-3 left-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-lg">
@@ -109,11 +128,12 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
           </div>
 
           {/* After Image */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative overflow-hidden">
             <img
               src={afterImage}
               alt={afterLabel}
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain transition-transform duration-100"
+              style={transformStyle}
               draggable={false}
             />
             <div className="absolute top-3 right-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-lg">
@@ -121,6 +141,13 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Zoom indicator */}
+        {zoom.scale > 1 && (
+          <div className="absolute bottom-3 left-3 px-2 py-1 bg-black/60 backdrop-blur rounded-lg text-[10px] font-bold text-white z-30">
+            {Math.round(zoom.scale * 100)}%
+          </div>
+        )}
 
         {layoutData && <LayoutOverlay data={layoutData} show={true} />}
 
@@ -158,20 +185,23 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
     <div
       ref={containerRef}
       className={`relative rounded-xl border border-stone-700 bg-stone-950 overflow-hidden select-none group h-full w-full ${className}`}
+      onWheel={onZoom}
     >
 
       <img
         src={afterImage}
         alt={afterLabel}
-        className="absolute inset-0 w-full h-full object-contain"
+        className="absolute inset-0 w-full h-full object-contain transition-transform duration-100"
+        style={transformStyle}
         draggable={false}
       />
 
       <img
         src={beforeImage}
         alt={beforeLabel}
-        className="absolute inset-0 w-full h-full object-contain"
+        className="absolute inset-0 w-full h-full object-contain transition-transform duration-100"
         style={{
+          ...transformStyle,
           clipPath: `inset(0 ${100 - sliderPosition}% 0 0)`,
         }}
         draggable={false}
@@ -186,6 +216,13 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
       <div className="absolute top-3 right-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-lg">
         <span className="text-[10px] font-bold text-white uppercase">{afterLabel}</span>
       </div>
+
+      {/* Zoom indicator */}
+      {zoom.scale > 1 && (
+        <div className="absolute bottom-3 left-3 px-2 py-1 bg-black/60 backdrop-blur rounded-lg text-[10px] font-bold text-white z-30">
+          {Math.round(zoom.scale * 100)}%
+        </div>
+      )}
 
       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300 z-20" style={{ right: '3rem' }}>
         {onFullscreen && (
