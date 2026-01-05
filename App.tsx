@@ -1349,23 +1349,18 @@ const App: React.FC = () => {
       </main>
 
       {/* Persistence History Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 h-24 bg-white/95 backdrop-blur-md border-t border-stone-200 z-40 transform transition-transform duration-300 ease-in-out px-10 flex items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        {/* Title Tag */}
-        <div className="absolute top-0 left-10 -translate-y-1/2 bg-stone-800 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-widest flex items-center gap-1.5">
-          <Icons.History size={10} />
-          History
-          <span className="bg-stone-700 px-1.5 rounded-full text-[9px]">{state.generatedImages.length}</span>
-        </div>
-
+      {/* Persistence History Bottom Bar */}
+      <div className="fixed bottom-0 left-0 right-0 h-24 bg-white/95 backdrop-blur-md border-t border-stone-200 z-40 transform transition-transform duration-300 ease-in-out flex items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        {/* History List - Full Width */}
         {state.generatedImages.length === 0 ? (
           <div className="w-full flex items-center justify-center text-stone-300 gap-2">
             <Icons.Image size={24} strokeWidth={1.5} />
             <span className="text-xs font-medium">No history records</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1 overflow-x-auto overflow-y-hidden w-full h-full py-2 custom-scrollbar px-4">
+          <div className="flex-1 flex items-center gap-1 overflow-x-auto overflow-y-hidden w-full h-full py-2 custom-scrollbar px-6">
             {state.generatedImages.map((img, index) => (
-              <div key={index} className="flex-shrink-0 w-20 h-20">
+              <div key={index} className="flex-shrink-0 w-20 h-20 group relative cursor-pointer">
                 <HistoryThumbnail
                   imageUrl={`data:image/png;base64,${img}`}
                   index={index}
