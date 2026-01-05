@@ -24,15 +24,23 @@ export interface AnalysisResult {
   isComplete: boolean;
 }
 
+export interface ReferenceImage {
+  id: string;
+  url: string;
+  name: string;
+  mimeType: string;
+  aspectRatio: string;
+}
+
 export interface HistoryItem {
   id: string;
-  timestamp: number;
-  originalImage: string;
-  mimeType?: string;
-  detectedAspectRatio: string;
   prompt: string;
-  generatedImage: string | null;
-  criticFeedback: string | null;
+  timestamp: number;
+  originalImage: string; // base64
+  generatedImage?: string; // base64
+  mimeType?: string;
+  referenceImages?: ReferenceImage[];
+  detectedAspectRatio?: string;
 }
 
 export interface LayoutElement {
@@ -45,38 +53,44 @@ export interface AppState {
   image: string | null;
   mimeType: string;
   isProcessing: boolean;
+  generatedImage: string | null;
+  editablePrompt: string;
   activeRole: AgentRole | null;
   results: Record<AgentRole, AnalysisResult>;
-  generatedImage: string | null;
-  generatedImages: string[];
-  isGeneratingImage: boolean;
-
-  // Prompt Studio State
-  editablePrompt: string;
-  promptHistory: string[];
-  currentPromptIndex: number;
-  isRefiningPrompt: boolean;
-  useReferenceImage: boolean;
-
-  // Translation Cache
-  promptCache: {
-    CN: string;
-    EN: string;
-  };
-
-  isTemplatizing: boolean;
-  detectedAspectRatio: string;
-  videoAnalysisDuration: number | null;
-  isRefining: boolean;
   history: HistoryItem[];
-  isHistoryOpen: boolean;
+  promptHistory: string[];
+  selectedHistoryIndex: number | null;
+
+  // Missing properties added to fix lint errors
+  isGeneratingImage: boolean;
+  isRefiningPrompt: boolean;
+  isTemplatizing: boolean;
+  isRefining: boolean;
+  videoAnalysisDuration: number | null;
+  detectedAspectRatio: string;
+  currentPromptIndex?: number;
+
+  // Settings
   layoutData: LayoutElement[] | null;
   isAnalyzingLayout: boolean;
 
-  // Fix: Added missing properties used in App.tsx for QA and prompt refinement
+  // UI States
+  isComparing: boolean;
+  activeTab: string;
+
+  // Prompt Studio
+  useReferenceImage: boolean; // Toggle for "Text to Image" vs "Image to Image" using the main input image
+  referenceImages: ReferenceImage[]; // Dragged reference images for the prompt
+  promptCache: Record<string, string>; // Cache prompts by language (CN/EN)
+
+  // Global History
+  generatedImages: string[];
+
+  isHistoryOpen: boolean;
+
+  // Chat/Suggestions
   suggestions: string[];
   selectedSuggestionIndices: number[];
-  selectedHistoryIndex: number;
 }
 
 export type AgentPromptGenerator = (previousContext: string) => string;

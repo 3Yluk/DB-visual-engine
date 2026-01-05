@@ -1,26 +1,28 @@
 // Local cache service for persisting current task state
 
-import { AppState, AgentRole, AnalysisResult } from '../types';
+import { get, set, del } from 'idb-keyval';
+import { AppState, AgentRole } from '../types';
 
 const CACHE_KEY = 'unimage_current_task';
 
 export interface CachedTaskState {
-  image: string | null;
+  image: string | null; // base64
   mimeType: string;
-  displayImage: string | null;
+  displayImage: string | null; // base64
   detectedAspectRatio: string;
   videoAnalysisDuration: number | null;
-  results: Record<AgentRole, AnalysisResult>;
+  results: Record<AgentRole, any>; // Simplified type
   editablePrompt: string;
   generatedImage: string | null;
   generatedImages: string[];
-  layoutData: AppState['layoutData'];
-  promptCache: AppState['promptCache'];
+  layoutData: any | null;
+  promptCache: Record<string, string>;
   selectedHistoryIndex: number;
   timestamp: number;
+  referenceImages: any[];
 }
 
-const EMPTY_RESULTS: Record<AgentRole, AnalysisResult> = {
+const EMPTY_RESULTS = {
   [AgentRole.AUDITOR]: { role: AgentRole.AUDITOR, content: '', isStreaming: false, isComplete: false },
   [AgentRole.DESCRIPTOR]: { role: AgentRole.DESCRIPTOR, content: '', isStreaming: false, isComplete: false },
   [AgentRole.ARCHITECT]: { role: AgentRole.ARCHITECT, content: '', isStreaming: false, isComplete: false },
@@ -32,13 +34,13 @@ const EMPTY_RESULTS: Record<AgentRole, AnalysisResult> = {
 /**
  * Save current task state to localStorage
  */
-export const saveCurrentTask = (state: Partial<CachedTaskState>): void => {
+export const saveCurrentTask = async (state: Partial<CachedTaskState>): Promise<void> => {
   try {
     const cached: CachedTaskState = {
       image: state.image ?? null,
       mimeType: state.mimeType ?? '',
       displayImage: state.displayImage ?? null,
-      detectedAspectRatio: state.detectedAspectRatio ?? '1:1',
+      detectedAspectRatio: state.detectedAspectRatio ?? "1:1",
       videoAnalysisDuration: state.videoAnalysisDuration ?? null,
       results: state.results ?? EMPTY_RESULTS,
       editablePrompt: state.editablePrompt ?? '',
@@ -47,35 +49,33 @@ export const saveCurrentTask = (state: Partial<CachedTaskState>): void => {
       layoutData: state.layoutData ?? null,
       promptCache: state.promptCache ?? { CN: '', EN: '' },
       selectedHistoryIndex: state.selectedHistoryIndex ?? 0,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      referenceImages: state.referenceImages ?? []
     };
 
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
+    await set(CACHE_KEY, cached);
   } catch (e) {
-    console.warn('Failed to save task cache:', e);
+    console.error('Failed to save task cache to IndexedDB:', e);
   }
 };
 
 /**
  * Load current task state from localStorage
  */
-export const loadCurrentTask = (): CachedTaskState | null => {
+export const loadCurrentTask = async (): Promise<CachedTaskState | null> => {
   try {
-    const cached = localStorage.getItem(CACHE_KEY);
+    const cached = await get<CachedTaskState>(CACHE_KEY);
     if (!cached) return null;
-    
-    const parsed = JSON.parse(cached) as CachedTaskState;
-    
-    // Optional: Check if cache is too old (e.g., > 7 days)
-    const MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
-    if (Date.now() - parsed.timestamp > MAX_AGE) {
-      clearCurrentTask();
+
+    // Validate timestamp (expire after 24h)
+    if (Date.now() - cached.timestamp > 24 * 60 * 60 * 1000) {
+      await del(CACHE_KEY);
       return null;
     }
-    
-    return parsed;
+
+    return cached;
   } catch (e) {
-    console.warn('Failed to load task cache:', e);
+    console.error('Failed to load task cache from IndexedDB:', e);
     return null;
   }
 };
@@ -83,10 +83,10 @@ export const loadCurrentTask = (): CachedTaskState | null => {
 /**
  * Clear current task cache
  */
-export const clearCurrentTask = (): void => {
+export const clearCurrentTask = async (): Promise<void> => {
   try {
-    localStorage.removeItem(CACHE_KEY);
+    await del(CACHE_KEY);
   } catch (e) {
-    console.warn('Failed to clear task cache:', e);
+    console.error('Failed to clear task cache:', e);
   }
 };

@@ -5,7 +5,9 @@ import { AgentCard } from './components/AgentCard';
 import { ImageViewer } from './components/ImageViewer';
 import { ImageComparisonSlider } from './components/ImageComparisonSlider';
 import { HistoryThumbnail } from './components/HistoryThumbnail';
+import { ReferenceImageList } from './components/ReferenceImageList';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
+import { StorageIndicator } from './components/StorageIndicator';
 import { Icons } from './components/Icons';
 import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt, executeSmartAnalysis } from './services/geminiService';
 import { saveHistoryItem, getHistory, deleteHistoryItemById } from './services/historyService';
@@ -16,7 +18,7 @@ import { soundService } from './services/soundService';
 import { usePipelineProgress } from './hooks/usePipelineProgress';
 import { PipelineProgressView } from './components/PipelineProgressView';
 import { AGENTS, PIPELINE_ORDER } from './constants';
-import { AgentRole, AppState, HistoryItem, ChatMessage, PipelineStepStatus } from './types';
+import { AgentRole, AppState, HistoryItem, ChatMessage, PipelineStepStatus, ReferenceImage } from './types';
 import { ChatPanel } from './components/ChatPanel';
 import { ChatDrawer } from './components/ChatDrawer';
 import { PanelHeader } from './components/PanelHeader';
@@ -49,7 +51,10 @@ const INITIAL_STATE: AppState = {
   layoutData: null, isAnalyzingLayout: false,
   suggestions: [], selectedSuggestionIndices: [],
   promptCache: { CN: '', EN: '' },
-  selectedHistoryIndex: 0
+  selectedHistoryIndex: 0,
+  referenceImages: [],
+  isComparing: false,
+  activeTab: 'STUDIO'
 };
 
 type TabType = AgentRole.AUDITOR | AgentRole.DESCRIPTOR | AgentRole.ARCHITECT | 'STUDIO';
@@ -61,6 +66,78 @@ const App: React.FC = () => {
   const [displayImage, setDisplayImage] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>('STUDIO');
+
+  // Consolidate initialization logic
+  useEffect(() => {
+    const init = async () => {
+      // Check for environment variable injection
+      const envKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      if (envKey && envKey.length > 10) {
+        setHasKey(true);
+      }
+
+      try {
+        const [hist, cached] = await Promise.all([
+          getHistory(),
+          loadCurrentTask()
+        ]);
+
+        let generatedImages: string[] = [];
+        let mergedState: Partial<AppState> = { history: hist };
+
+        if (cached) {
+          // Rebuild generated images from history if needed
+          const imagesFromHistory = hist
+            .filter(item => item.generatedImage)
+            .map(item => item.generatedImage as string);
+
+          generatedImages = imagesFromHistory.length > 0 ? imagesFromHistory : cached.generatedImages;
+
+          mergedState = {
+            ...mergedState,
+            image: cached.image,
+            mimeType: cached.mimeType,
+            detectedAspectRatio: cached.detectedAspectRatio,
+            videoAnalysisDuration: cached.videoAnalysisDuration,
+            results: cached.results,
+            editablePrompt: cached.editablePrompt,
+            generatedImage: cached.generatedImage || (hist.length > 0 ? hist[0].generatedImage : null),
+            generatedImages: generatedImages,
+            layoutData: cached.layoutData,
+            promptCache: cached.promptCache,
+            selectedHistoryIndex: cached.selectedHistoryIndex || 0,
+            referenceImages: cached.referenceImages || []
+          };
+
+          // Restore display image
+          if (cached.displayImage) {
+            setDisplayImage(cached.displayImage);
+          }
+        } else {
+          // Fallback if no cache but history exists
+          if (hist.length > 0) {
+            mergedState.generatedImage = hist[0].generatedImage;
+            // generatedImages can be rebuilt from history even without cache
+            const imagesFromHistory = hist
+              .filter(item => item.generatedImage)
+              .map(item => item.generatedImage as string);
+            mergedState.generatedImages = imagesFromHistory;
+          }
+        }
+
+        if (cached || hist.length > 0) {
+          setShowLanding(false);
+        }
+
+        setState(prev => ({ ...prev, ...mergedState }));
+
+      } catch (e) {
+        console.error("Initialization failed", e);
+      }
+    };
+    init();
+  }, []);
+
   const [refinementInput, setRefinementInput] = useState('');
   const [fullscreenImg, setFullscreenImg] = useState<string | null>(null);
   const [isFullscreenComparison, setIsFullscreenComparison] = useState(false);
@@ -89,13 +166,16 @@ const App: React.FC = () => {
     return saved ? parseFloat(saved) : 50;
   });
   const [isDraggingDivider, setIsDraggingDivider] = useState(false);
-  const [isGlobalDragging, setIsGlobalDragging] = useState(false);
+  // Removed isGlobalDragging state as we use localized drop zones now
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const analyzeAbortRef = useRef<AbortController | null>(null);
 
   // Synchronized image zoom state
   const [imageZoom, setImageZoom] = useState({ scale: 1, panX: 0, panY: 0 });
   const imageContainerRef = useRef<HTMLDivElement>(null);
+
+  // Reference Image Drag Dnd State
+  const [isDraggingReference, setIsDraggingReference] = useState(false);
 
   const isPipelineRunning = useRef(false);
 
@@ -146,83 +226,6 @@ const App: React.FC = () => {
     };
   }, [isDraggingDivider]);
 
-  // Global drag-drop for image replacement
-  useEffect(() => {
-    let dragCounter = 0;
-
-    const handleDragEnter = (e: DragEvent) => {
-      e.preventDefault();
-      dragCounter++;
-      if (e.dataTransfer?.types.includes('Files')) {
-        setIsGlobalDragging(true);
-      }
-    };
-
-    const handleDragLeave = (e: DragEvent) => {
-      e.preventDefault();
-      dragCounter--;
-      if (dragCounter === 0) {
-        setIsGlobalDragging(false);
-      }
-    };
-
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault();
-    };
-
-    const handleDrop = (e: DragEvent) => {
-      e.preventDefault();
-      dragCounter = 0;
-      setIsGlobalDragging(false);
-
-      const file = e.dataTransfer?.files?.[0];
-      if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
-        if (file.size > 20 * 1024 * 1024) {
-          showToast('文件过大 (最大 20MB)', 'error');
-          return;
-        }
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64String = reader.result as string;
-          const cleanBase64 = base64String.split(',')[1];
-
-          // Calculate aspect ratio
-          if (file.type.startsWith('image/')) {
-            const img = new Image();
-            img.onload = () => {
-              const ratio = img.naturalWidth / img.naturalHeight;
-              const ratios = [
-                { id: "1:1", value: 1.0 },
-                { id: "3:4", value: 0.75 },
-                { id: "4:3", value: 1.333 },
-                { id: "9:16", value: 0.5625 },
-                { id: "16:9", value: 1.777 }
-              ];
-              const closest = ratios.reduce((prev, curr) =>
-                Math.abs(curr.value - ratio) < Math.abs(prev.value - ratio) ? curr : prev
-              );
-              handleFileSelected(cleanBase64, closest.id, file.type);
-            };
-            img.src = base64String;
-          }
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-
-    window.addEventListener('dragenter', handleDragEnter);
-    window.addEventListener('dragleave', handleDragLeave);
-    window.addEventListener('dragover', handleDragOver);
-    window.addEventListener('drop', handleDrop);
-
-    return () => {
-      window.removeEventListener('dragenter', handleDragEnter);
-      window.removeEventListener('dragleave', handleDragLeave);
-      window.removeEventListener('dragover', handleDragOver);
-      window.removeEventListener('drop', handleDrop);
-    };
-  }, []);
-
   // Handle image zoom update
   const handleZoomChange = (newZoom: ImageZoomState) => {
     setImageZoom(newZoom);
@@ -236,35 +239,29 @@ const App: React.FC = () => {
   // Auto-save current task to cache whenever relevant state changes
   useEffect(() => {
     if (state.image) {
-      saveCurrentTask({
-        image: state.image,
-        mimeType: state.mimeType,
-        displayImage: displayImage,
-        detectedAspectRatio: state.detectedAspectRatio,
-        videoAnalysisDuration: state.videoAnalysisDuration,
-        results: state.results,
-        editablePrompt: state.editablePrompt,
-        generatedImage: state.generatedImage,
-        generatedImages: state.generatedImages,
-        layoutData: state.layoutData,
-        promptCache: state.promptCache,
-        selectedHistoryIndex: state.selectedHistoryIndex
-      });
+      try {
+        saveCurrentTask({
+          image: state.image,
+          mimeType: state.mimeType,
+          displayImage: displayImage,
+          detectedAspectRatio: state.detectedAspectRatio,
+          videoAnalysisDuration: state.videoAnalysisDuration,
+          results: state.results,
+          editablePrompt: state.editablePrompt,
+          generatedImage: state.generatedImage,
+          generatedImages: state.generatedImages,
+          layoutData: state.layoutData,
+          promptCache: state.promptCache,
+          selectedHistoryIndex: state.selectedHistoryIndex,
+          referenceImages: state.referenceImages
+        });
+      } catch (e: any) {
+        if (e.name === 'QuotaExceededError') {
+          showToast('本地存储已满，请及时清理历史记录', 'error');
+        }
+      }
     }
-  }, [
-    state.image,
-    state.mimeType,
-    displayImage,
-    state.detectedAspectRatio,
-    state.videoAnalysisDuration,
-    state.results,
-    state.editablePrompt,
-    state.generatedImage,
-    state.generatedImages,
-    state.layoutData,
-    state.promptCache,
-    state.selectedHistoryIndex
-  ]);
+  }, [state, displayImage]);
 
   // Helper to load history item
   const loadHistoryItem = (index: number) => {
@@ -342,79 +339,7 @@ const App: React.FC = () => {
 
   const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  useEffect(() => {
-    const init = async () => {
-      // Check for environment variable injection
-      const envKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-      if (envKey && envKey.length > 10) {
-        setHasKey(true);
-      }
-      const hist = await getHistory();
 
-      // Load cached task state
-      const cached = loadCurrentTask();
-      if (cached) {
-        // 从 history 中提取所有 generatedImage，重建 generatedImages 数组
-        const generatedImages = hist
-          .filter(item => item.generatedImage)
-          .map(item => item.generatedImage);
-
-        setState(prev => ({
-          ...prev,
-          history: hist,
-          image: cached.image,
-          mimeType: cached.mimeType,
-          detectedAspectRatio: cached.detectedAspectRatio,
-          videoAnalysisDuration: cached.videoAnalysisDuration,
-          results: cached.results,
-          editablePrompt: cached.editablePrompt,
-          generatedImage: cached.generatedImage || (hist.length > 0 && hist[0].generatedImage ? hist[0].generatedImage : null),
-          generatedImages: generatedImages.length > 0 ? generatedImages : cached.generatedImages,
-          layoutData: cached.layoutData,
-          promptCache: cached.promptCache,
-          selectedHistoryIndex: cached.selectedHistoryIndex || 0
-        }));
-
-        if (cached.displayImage) {
-          setDisplayImage(cached.displayImage);
-        }
-
-        // 有缓存状态，跳过首页
-        setShowLanding(false);
-      } else {
-        // 从 history 中生成 generatedImages
-        const generatedImages = hist
-          .filter(item => item.generatedImage)
-          .map(item => item.generatedImage);
-
-        // 如果有历史记录，从最新的历史项恢复原始图片
-        if (hist.length > 0 && hist[0].originalImage) {
-          const latestItem = hist[0];
-          setDisplayImage(`data:${latestItem.mimeType || 'image/png'};base64,${latestItem.originalImage}`);
-          setState(prev => ({
-            ...prev,
-            history: hist,
-            image: latestItem.originalImage,
-            mimeType: latestItem.mimeType || 'image/png',
-            detectedAspectRatio: latestItem.detectedAspectRatio || '1:1',
-            generatedImages: generatedImages,
-            generatedImage: latestItem.generatedImage || null,
-            editablePrompt: latestItem.prompt || ''
-          }));
-
-          // 有历史记录，跳过首页
-          setShowLanding(false);
-        } else {
-          setState(prev => ({
-            ...prev,
-            history: hist,
-            generatedImages: generatedImages
-          }));
-        }
-      }
-    };
-    init();
-  }, []);
 
   const handleSelectKey = async () => {
     setIsKeyModalOpen(true);
@@ -509,7 +434,7 @@ const App: React.FC = () => {
 
     for (const line of lines) {
       const trimmed = line.trim();
-      // Match lines starting with 1. 2. 3. etc., possibly with markers like * - 
+      // Match lines starting with 1. 2. 3. etc., possibly with markers like * -
       const match = trimmed.match(/^[\*\-]?\s*([1-3])[.\)、]\s*(.+)/);
       if (match && match[2]) {
         // Clean up the suggestion text: remove leading ** and trailing **
@@ -786,17 +711,39 @@ const App: React.FC = () => {
     if (state.isGeneratingImage || !p) return;
     setState(prev => ({ ...prev, isGeneratingImage: true }));
     try {
-      const img = await generateImageFromPrompt(p, state.detectedAspectRatio, state.useReferenceImage ? state.image : null, state.mimeType);
+      // Submit to Gemini for generation
+      let refImage: string | null = null;
+      let targetMimeType = state.mimeType || 'image/jpeg';
+      let detectedRatio = state.detectedAspectRatio;
+
+      // Logic: Prioritize dragged reference images (User explicit intent)
+      if (state.referenceImages && state.referenceImages.length > 0) {
+        refImage = state.referenceImages[0].url;
+        targetMimeType = state.referenceImages[0].mimeType;
+        // Logic: Use reference image's aspect ratio
+        if (state.referenceImages[0].aspectRatio) {
+          detectedRatio = state.referenceImages[0].aspectRatio;
+        }
+        showToast("已启用参考图生成", "info");
+      } else if (state.useReferenceImage && state.image) {
+        // Fallback to Main Image if toggle is ON
+        refImage = state.image;
+        targetMimeType = state.mimeType;
+        showToast("已启用主图参考生成", "info");
+      }
+
+      const img = await generateImageFromPrompt(p, detectedRatio, refImage, targetMimeType);
+
       if (img) {
         const newItem: HistoryItem = {
           id: Date.now().toString(),
           timestamp: Date.now(),
           originalImage: state.image!,
           mimeType: state.mimeType,
-          detectedAspectRatio: state.detectedAspectRatio,
           prompt: p,
           generatedImage: img,
-          criticFeedback: null
+          // Save reference images in history for accurate restore
+          referenceImages: state.referenceImages?.length ? [...state.referenceImages] : undefined
         };
         await saveHistoryItem(newItem);
         setState(prev => ({
@@ -808,6 +755,9 @@ const App: React.FC = () => {
           selectedHistoryIndex: 0
         }));
         setTimeout(() => handleRunQA(), 500);
+      } else {
+        setState(prev => ({ ...prev, isGeneratingImage: false }));
+        showToast("生成失败，模型未返回有效图片", "error");
       }
     } catch (e) { showToast("生成失败", 'error'); setState(prev => ({ ...prev, isGeneratingImage: false })); }
   };
@@ -900,7 +850,7 @@ const App: React.FC = () => {
         agentContent += chunk;
         setState(prev => ({ ...prev, results: { ...prev.results, [role]: { ...prev.results[role], content: agentContent } } }));
       }
-      setState(prev => ({ ...prev, results: { ...prev.results, [role]: { ...prev.results[role], isStreaming: false, isComplete: true } }, activeRole: null }));
+      setState(prev => ({ ...prev, activeRole: null, results: { ...prev.results, [role]: { ...prev.results[role], isStreaming: false, isComplete: true } } }));
 
       // If regenerating SYNTHESIZER, update the editable prompt
       if (role === AgentRole.SYNTHESIZER) {
@@ -1089,7 +1039,7 @@ const App: React.FC = () => {
                   <div className="relative">
                     <button
                       onClick={() => setIsHistoryDropdownOpen(!isHistoryDropdownOpen)}
-                      className="flex items-center gap-1 px-2 py-1 bg-amber-900/20 text-amber-500 hover:bg-amber-900/40 rounded-lg text-[9px] font-bold transition-colors"
+                      className="flex items-center gap-1 px-3 py-2 bg-amber-900/20 text-amber-500 hover:bg-amber-900/40 rounded-lg text-[9px] font-bold transition-colors"
                     >
                       <Icons.History size={10} />
                       {state.promptHistory.length}
@@ -1125,14 +1075,105 @@ const App: React.FC = () => {
           </div>
 
           {/* Textarea */}
-          <div className="flex-1 min-h-0 p-4 flex flex-col">
+          <div className="flex-1 min-h-0 p-4 flex flex-col relative group">
+            <div
+              className={`absolute inset-0 rounded-xl pointer-events-none transition-all duration-200 z-10 
+                  ${isDraggingReference ? 'border-2 border-emerald-500 bg-emerald-500/10' : 'border border-transparent'}`}
+            >
+              {isDraggingReference && (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center text-emerald-500">
+                  <Icons.Download size={32} />
+                  <span className="text-xs font-bold mt-2">添加参考图</span>
+                </div>
+              )}
+            </div>
+
             <textarea
               value={state.editablePrompt}
               onChange={(e) => setState(prev => ({ ...prev, editablePrompt: e.target.value }))}
-              className="flex-1 w-full bg-stone-950 rounded-xl border border-stone-800 p-4 text-[12px] font-mono leading-relaxed focus:ring-2 focus:ring-stone-600 outline-none resize-none overflow-y-auto custom-scrollbar text-stone-200 placeholder:text-stone-600"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingReference(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingReference(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingReference(false);
+
+                const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+                if (files.length === 0) return;
+
+                Promise.all(files.map(file => new Promise<ReferenceImage>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    resolve({
+                      id: crypto.randomUUID(),
+                      url: ev.target?.result as string,
+                      name: file.name,
+                      mimeType: file.type,
+                      // Calculate default aspect ratio (will be refined by Image load)
+                      aspectRatio: '1:1'
+                    });
+                  };
+                  reader.readAsDataURL(file);
+                }))).then(async (tempImages) => {
+                  // Refine aspect ratios by loading images
+                  const processedImages = await Promise.all(tempImages.map(async img => {
+                    return new Promise<ReferenceImage>(resolve => {
+                      const image = new Image();
+                      image.onload = () => {
+                        const ratio = image.naturalWidth / image.naturalHeight;
+                        // Allow flexible ratio, but map to standard ones for model compatibility if needed.
+                        // For simplicity using same logic as ImageUploader
+                        const ratios = [
+                          { id: "1:1", value: 1.0 },
+                          { id: "3:4", value: 0.75 },
+                          { id: "4:3", value: 1.333 },
+                          { id: "9:16", value: 0.5625 },
+                          { id: "16:9", value: 1.777 }
+                        ];
+                        const closest = ratios.reduce((prev, curr) =>
+                          Math.abs(curr.value - ratio) < Math.abs(prev.value - ratio) ? curr : prev
+                        );
+                        resolve({ ...img, aspectRatio: closest.id });
+                      };
+                      image.src = img.url;
+                    });
+                  }));
+
+                  setState(prev => ({
+                    ...prev,
+                    referenceImages: [...prev.referenceImages, ...processedImages]
+                  }));
+                  showToast(`已添加 ${processedImages.length} 张参考图`, 'success');
+                });
+              }}
+              className="flex-1 w-full bg-stone-950 rounded-xl border border-stone-800 p-4 text-[12px] font-mono leading-relaxed focus:ring-2 focus:ring-stone-600 outline-none resize-none overflow-y-auto custom-scrollbar text-stone-200 placeholder:text-stone-600 relative z-20"
               placeholder="正在等待提示词生成..."
               spellCheck={false}
             />
+
+            {/* Reference Image List (Red Box Area) */}
+            {state.referenceImages?.length > 0 && (
+              <div className="mt-2 border-t border-stone-800 pt-2 relative z-20">
+                <ReferenceImageList
+                  images={state.referenceImages}
+                  onRemove={(id) => {
+                    setState(prev => ({
+                      ...prev,
+                      referenceImages: prev.referenceImages.filter(img => img.id !== id)
+                    }));
+                  }}
+                  onPreview={(img) => setFullscreenImg(img.url)}
+                />
+              </div>
+            )}
           </div>
 
           {/* Bottom Actions */}
@@ -1361,18 +1402,10 @@ const App: React.FC = () => {
       <ApiKeyModal isOpen={isKeyModalOpen} onClose={() => setIsKeyModalOpen(false)} />
       <PromptLabModal isOpen={isPromptLabOpen} onClose={() => setIsPromptLabOpen(false)} />
 
-      {/* Global Drag Overlay */}
-      {isGlobalDragging && (
-        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center pointer-events-none animate-in fade-in duration-200">
-          <div className="flex flex-col items-center gap-4 text-white">
-            <div className="w-24 h-24 rounded-full bg-orange-500/20 flex items-center justify-center animate-pulse">
-              <Icons.Upload size={48} className="text-orange-500" />
-            </div>
-            <p className="text-xl font-medium">拖放图片以替换</p>
-            <p className="text-sm text-stone-400">支持图片和视频文件</p>
-          </div>
-        </div>
-      )}
+      <ApiKeyModal isOpen={isKeyModalOpen} onClose={() => setIsKeyModalOpen(false)} />
+      <PromptLabModal isOpen={isPromptLabOpen} onClose={() => setIsPromptLabOpen(false)} />
+
+      {/* Global Drag Overlay Removed */}
 
       {/* Fullscreen Overlay */}
       {fullscreenImg && (
@@ -1519,6 +1552,7 @@ const App: React.FC = () => {
           />
         )}
         <div className="flex items-center gap-2">
+          <StorageIndicator />
           <button onClick={() => setIsPromptLabOpen(true)} className="p-2.5 rounded-full hover:bg-stone-800 text-stone-400 hover:text-amber-500 transition-all" title="Prompt Lab"><Icons.Wand2 size={20} /></button>
           <button onClick={() => setIsHelpOpen(true)} className="p-2.5 rounded-full hover:bg-stone-800 text-stone-400 hover:text-orange-500 transition-all" title="帮助文档"><Icons.Help size={20} /></button>
           <button onClick={() => setState(prev => ({ ...prev, isHistoryOpen: true }))} className="p-2.5 rounded-full hover:bg-stone-800 text-stone-400 hover:text-stone-200 transition-all" title="历史记录"><Icons.History size={20} /></button>

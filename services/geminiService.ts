@@ -369,8 +369,8 @@ export async function generateImageFromPrompt(promptContext: string, aspectRatio
 
     const text = response.text;
 
-    // Check if it's a URL or base64
-    if (text && (text.startsWith('http') || text.length > 200)) {
+    // Check if it's a URL or base64. Reject strictly if it looks like Markdown/JSON.
+    if (text && (text.startsWith('http') || text.length > 200) && !text.trim().startsWith('```')) {
       return text;
     }
 
