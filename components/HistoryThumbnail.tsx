@@ -50,7 +50,7 @@ export const HistoryThumbnail: React.FC<HistoryThumbnailProps> = ({
       {onDelete && (
         <button
           onClick={handleDelete}
-          className="absolute top-1 left-1 p-1 bg-black/60 hover:bg-rose-500/80 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 backdrop-blur-sm"
+          className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-rose-500/80 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 backdrop-blur-sm"
           title="删除此记录"
         >
           <Icons.X size={10} className="text-white" />

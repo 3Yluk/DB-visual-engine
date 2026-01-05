@@ -24,18 +24,16 @@ export const ReferenceImageList: React.FC<ReferenceImageListProps> = ({ images, 
                         alt={img.name}
                         className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onRemove(img.id);
-                            }}
-                            className="p-1 bg-rose-500/80 hover:bg-rose-600 text-white rounded-full transition-transform hover:scale-110"
-                            title="移除"
-                        >
-                            <Icons.X size={10} />
-                        </button>
-                    </div>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onRemove(img.id);
+                        }}
+                        className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 hover:bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="移除"
+                    >
+                        <Icons.X size={10} />
+                    </button>
                 </div>
             ))}
             <div className="text-[10px] text-stone-600 font-medium px-2 select-none">
