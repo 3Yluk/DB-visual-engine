@@ -22,16 +22,16 @@ export const PipelineProgressView: React.FC<PipelineProgressViewProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 bg-white flex flex-col animate-in fade-in duration-300 z-10">
+    <div className="absolute inset-0 bg-stone-900 flex flex-col animate-in fade-in duration-300 z-10">
       {/* Header */}
-      <div className="flex-shrink-0 px-6 py-4 border-b border-stone-200 bg-stone-50">
+      <div className="flex-shrink-0 px-6 py-4 border-b border-stone-700 bg-stone-800">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-serif font-bold text-stone-800 flex items-center gap-2">
+            <h2 className="text-lg font-serif font-bold text-stone-200 flex items-center gap-2">
               <Icons.Sparkles size={20} className="text-amber-500" />
               AI 视觉解构流水线
             </h2>
-            <p className="text-xs text-stone-400 mt-1">
+            <p className="text-xs text-stone-500 mt-1">
               实时分析进度 · 可切换到其他标签页
             </p>
           </div>
@@ -39,7 +39,7 @@ export const PipelineProgressView: React.FC<PipelineProgressViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={onHide}
-              className="px-3 py-1.5 text-xs font-bold text-stone-600 hover:bg-stone-200 rounded-lg transition-all flex items-center gap-1"
+              className="px-3 py-1.5 text-xs font-bold text-stone-400 hover:bg-stone-700 rounded-lg transition-all flex items-center gap-1"
             >
               <Icons.ArrowLeft size={14} />
               返回编辑器
@@ -47,7 +47,7 @@ export const PipelineProgressView: React.FC<PipelineProgressViewProps> = ({
             {progress.isRunning && (
               <button
                 onClick={onCancel}
-                className="px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100 rounded-lg transition-all flex items-center gap-1"
+                className="px-3 py-1.5 text-xs font-bold text-rose-400 hover:bg-rose-900/30 rounded-lg transition-all flex items-center gap-1"
               >
                 <Icons.X size={14} />
                 取消
@@ -59,20 +59,20 @@ export const PipelineProgressView: React.FC<PipelineProgressViewProps> = ({
         {/* Overall Progress Bar */}
         <div className="mt-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-stone-600">
+            <span className="text-xs font-bold text-stone-400">
               总体进度
             </span>
             <div className="text-xs text-stone-500">
-              {progress.totalProgress}% 
+              {progress.totalProgress}%
               {progress.estimatedTimeRemaining && progress.estimatedTimeRemaining > 0 && (
-                <span className="ml-2 text-blue-600">
+                <span className="ml-2 text-blue-400">
                   预计剩余 {formatTime(progress.estimatedTimeRemaining)}
                 </span>
               )}
             </div>
           </div>
-          <div className="relative h-3 bg-stone-200 rounded-full overflow-hidden">
-            <div 
+          <div className="relative h-3 bg-stone-700 rounded-full overflow-hidden">
+            <div
               className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500 ease-out"
               style={{ width: `${progress.totalProgress}%` }}
             />
@@ -89,11 +89,11 @@ export const PipelineProgressView: React.FC<PipelineProgressViewProps> = ({
 
       {/* Completion Message */}
       {!progress.isRunning && progress.totalProgress === 100 && (
-        <div className="flex-shrink-0 p-6 border-t border-stone-200 bg-gradient-to-r from-green-50 to-emerald-50">
+        <div className="flex-shrink-0 p-6 border-t border-stone-700 bg-gradient-to-r from-green-900/30 to-emerald-900/30">
           <div className="text-center">
             <div className="text-4xl mb-2">✨</div>
-            <h3 className="text-lg font-bold text-stone-800">生成完成！</h3>
-            <p className="text-sm text-stone-600 mt-1">
+            <h3 className="text-lg font-bold text-stone-200">生成完成！</h3>
+            <p className="text-sm text-stone-400 mt-1">
               提示词已准备就绪，即将为您呈现
             </p>
           </div>

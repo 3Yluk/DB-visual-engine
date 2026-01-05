@@ -28,7 +28,26 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
 }) => {
   const [sliderPosition, setSliderPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Threshold for switching between side-by-side and slider mode
+  const SIDE_BY_SIDE_THRESHOLD = 600;
+  const useSideBySide = containerWidth >= SIDE_BY_SIDE_THRESHOLD;
+
+  // Monitor container width
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const handleMouseDown = () => setIsDragging(true);
   const handleMouseUp = () => setIsDragging(false);
@@ -68,6 +87,73 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
     }
   }, [isDragging]);
 
+  // Side-by-side mode
+  if (useSideBySide) {
+    return (
+      <div
+        ref={containerRef}
+        className={`relative rounded-xl border border-stone-700 bg-stone-950 overflow-hidden select-none group h-full w-full ${className}`}
+      >
+        <div className="absolute inset-0 flex">
+          {/* Before Image */}
+          <div className="flex-1 relative border-r border-stone-700">
+            <img
+              src={beforeImage}
+              alt={beforeLabel}
+              className="w-full h-full object-contain"
+              draggable={false}
+            />
+            <div className="absolute top-3 left-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-lg">
+              <span className="text-[10px] font-bold text-white uppercase">{beforeLabel}</span>
+            </div>
+          </div>
+
+          {/* After Image */}
+          <div className="flex-1 relative">
+            <img
+              src={afterImage}
+              alt={afterLabel}
+              className="w-full h-full object-contain"
+              draggable={false}
+            />
+            <div className="absolute top-3 right-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-lg">
+              <span className="text-[10px] font-bold text-white uppercase">{afterLabel}</span>
+            </div>
+          </div>
+        </div>
+
+        {layoutData && <LayoutOverlay data={layoutData} show={true} />}
+
+        {/* Fullscreen button */}
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300 z-20" style={{ right: '50%', transform: 'translateX(50%)' }}>
+          {onFullscreen && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onFullscreen(); }}
+              className="p-2.5 bg-white/90 backdrop-blur rounded-xl shadow-xl hover:bg-white text-stone-600 transition-all hover:scale-110 active:scale-95 flex items-center justify-center"
+              title="查看大图"
+            >
+              <Icons.Maximize size={16} />
+            </button>
+          )}
+        </div>
+
+        {onToggleLayout && (
+          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300 z-20">
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleLayout(); }}
+              disabled={isAnalyzingLayout}
+              className="px-3 py-1.5 bg-white/90 backdrop-blur rounded-xl text-[10px] font-bold text-stone-600 border border-stone-200 hover:bg-white transition-all flex items-center gap-1.5 shadow-lg active:scale-95"
+            >
+              {isAnalyzingLayout ? <Icons.RefreshCw size={12} className="animate-spin" /> : <Icons.Compass size={12} />}
+              BLUEPRINT
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Slider mode (narrow container)
   return (
     <div
       ref={containerRef}

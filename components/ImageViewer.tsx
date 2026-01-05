@@ -26,7 +26,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   const imgRef = useRef<HTMLImageElement>(null);
 
   return (
-    <div className={`relative group overflow-hidden rounded-xl border border-stone-200 bg-stone-50 transition-all h-full w-full ${className}`}>
+    <div className={`relative group overflow-hidden rounded-xl border border-stone-700 bg-stone-950 transition-all h-full w-full ${className}`}>
       <img
         ref={imgRef}
         src={src}

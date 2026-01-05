@@ -402,9 +402,15 @@ const App: React.FC = () => {
   const handleFileSelected = (base64Data: string, aspectRatio: string, mimeType: string, duration?: number) => {
     setDisplayImage(`data:${mimeType};base64,${base64Data}`);
     setState(prev => ({
-      ...INITIAL_STATE, history: prev.history, image: base64Data, mimeType: mimeType,
-      videoAnalysisDuration: duration || null, isProcessing: false, // Don't auto-start
-      activeRole: null, // No agent is active yet (prevents "analyzing" animation)
+      ...INITIAL_STATE,
+      history: prev.history,
+      generatedImages: prev.generatedImages,
+      selectedHistoryIndex: prev.selectedHistoryIndex,
+      image: base64Data,
+      mimeType: mimeType,
+      videoAnalysisDuration: duration || null,
+      isProcessing: false,
+      activeRole: null,
       detectedAspectRatio: aspectRatio
     }));
     setActiveTab('STUDIO');

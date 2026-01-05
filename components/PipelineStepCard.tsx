@@ -14,31 +14,31 @@ export const PipelineStepCard: React.FC<PipelineStepCardProps> = ({ step, index 
   const getStatusIcon = () => {
     switch (step.status) {
       case PipelineStepStatus.COMPLETED:
-        return <Icons.CheckCircle size={16} className="text-green-600" />;
+        return <Icons.CheckCircle size={16} className="text-green-500" />;
       case PipelineStepStatus.RUNNING:
-        return <Icons.RefreshCw size={16} className="text-blue-600 animate-spin" />;
+        return <Icons.RefreshCw size={16} className="text-blue-400 animate-spin" />;
       case PipelineStepStatus.ERROR:
-        return <Icons.AlertCircle size={16} className="text-rose-600" />;
+        return <Icons.AlertCircle size={16} className="text-rose-500" />;
       default:
-        return <div className="w-4 h-4 rounded-full border-2 border-stone-300" />;
+        return <div className="w-4 h-4 rounded-full border-2 border-stone-600" />;
     }
   };
 
   const getStatusColor = () => {
     switch (step.status) {
       case PipelineStepStatus.COMPLETED:
-        return 'border-green-200 bg-green-50';
+        return 'border-green-800/50 bg-green-900/20';
       case PipelineStepStatus.RUNNING:
-        return 'border-blue-200 bg-blue-50';
+        return 'border-blue-800/50 bg-blue-900/20';
       case PipelineStepStatus.ERROR:
-        return 'border-rose-200 bg-rose-50';
+        return 'border-rose-800/50 bg-rose-900/20';
       default:
-        return 'border-stone-200 bg-white';
+        return 'border-stone-700 bg-stone-800';
     }
   };
 
-  const content = step.status === PipelineStepStatus.RUNNING 
-    ? step.streamingContent 
+  const content = step.status === PipelineStepStatus.RUNNING
+    ? step.streamingContent
     : step.finalContent;
 
   return (
@@ -49,11 +49,11 @@ export const PipelineStepCard: React.FC<PipelineStepCardProps> = ({ step, index 
           <div className="mt-0.5">{getStatusIcon()}</div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-stone-800">
+              <h3 className="text-sm font-bold text-stone-200">
                 {index + 1}. {step.name.split('(')[0].trim()}
               </h3>
               {step.status === PipelineStepStatus.RUNNING && (
-                <span className="text-xs text-blue-600 font-bold">
+                <span className="text-xs text-blue-400 font-bold">
                   {step.progress}%
                 </span>
               )}
@@ -64,8 +64,8 @@ export const PipelineStepCard: React.FC<PipelineStepCardProps> = ({ step, index 
 
         {/* Progress Bar for Running Step */}
         {step.status === PipelineStepStatus.RUNNING && (
-          <div className="w-24 h-2 bg-blue-100 rounded-full overflow-hidden ml-3">
-            <div 
+          <div className="w-24 h-2 bg-blue-900/30 rounded-full overflow-hidden ml-3">
+            <div
               className="h-full bg-blue-500 transition-all duration-300"
               style={{ width: `${step.progress}%` }}
             />
@@ -77,12 +77,12 @@ export const PipelineStepCard: React.FC<PipelineStepCardProps> = ({ step, index 
       {content && (
         <div className="px-4 pb-4">
           <div className={`relative ${isExpanded ? '' : 'max-h-20 overflow-hidden'}`}>
-            <div className="text-xs text-stone-600 leading-relaxed font-mono bg-white/50 p-3 rounded-lg">
+            <div className="text-xs text-stone-400 leading-relaxed font-mono bg-stone-900/50 p-3 rounded-lg">
               {step.status === PipelineStepStatus.RUNNING ? (
                 // 流式输出 - 带打字效果
-                <div className="prose prose-sm max-w-none">
+                <div className="prose prose-sm max-w-none prose-invert">
                   {content}
-                  <span className="inline-block w-1 h-4 bg-blue-600 animate-pulse ml-0.5" />
+                  <span className="inline-block w-1 h-4 bg-blue-400 animate-pulse ml-0.5" />
                 </div>
               ) : (
                 // 完成后的内容 - 显示文本
@@ -92,14 +92,14 @@ export const PipelineStepCard: React.FC<PipelineStepCardProps> = ({ step, index 
               )}
             </div>
             {!isExpanded && content.length > 200 && (
-              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent" />
+              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-stone-800 to-transparent" />
             )}
           </div>
 
           {content.length > 200 && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"
+              className="mt-2 text-xs text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
             >
               {isExpanded ? (
                 <>
@@ -118,7 +118,7 @@ export const PipelineStepCard: React.FC<PipelineStepCardProps> = ({ step, index 
       {/* Error Message */}
       {step.error && (
         <div className="px-4 pb-4">
-          <div className="bg-rose-100 border border-rose-200 rounded-lg p-3 text-xs text-rose-700">
+          <div className="bg-rose-900/30 border border-rose-800/50 rounded-lg p-3 text-xs text-rose-400">
             <strong>错误：</strong> {step.error}
           </div>
         </div>
