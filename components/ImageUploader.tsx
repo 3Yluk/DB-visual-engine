@@ -1,9 +1,10 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { Icons } from './Icons';
+import { extractPromptFromPng } from '../utils/pngMetadata';
 
 interface ImageUploaderProps {
-  onImageSelected: (base64: string, aspectRatio: string, mimeType: string, duration?: number) => void;
+  onImageSelected: (base64: string, aspectRatio: string, mimeType: string, duration?: number, extractedPrompt?: string) => void;
   disabled: boolean;
 }
 
@@ -15,6 +16,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
   const [aspectRatio, setAspectRatio] = useState<string>("16:9");
   const [mimeType, setMimeType] = useState<string>("");
   const [customDuration, setCustomDuration] = useState<string>("");
+  const [extractedPrompt, setExtractedPrompt] = useState<string | null>(null);
 
   const calculateNearestRatio = (width: number, height: number): string => {
     const ratio = width / height;
@@ -33,6 +35,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
 
   const handleFile = (file: File) => {
     if (!file) return;
+
     if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
       if (file.size > 20 * 1024 * 1024) {
         alert("文件过大 (最大 20MB)。");
@@ -47,6 +50,13 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
         setMimeType(file.type);
 
         if (file.type.startsWith('image/')) {
+          // Try to extract prompt from metadata for ALL images
+          // (Our extractor safely handles non-PNGs by checking signatures)
+          const prompt = extractPromptFromPng(cleanBase64);
+          if (prompt) {
+            setExtractedPrompt(prompt);
+          }
+
           const img = new Image();
           img.onload = () => {
             const ratio = calculateNearestRatio(img.naturalWidth, img.naturalHeight);
@@ -74,11 +84,11 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
     if (preview && base64Data && mimeType.startsWith('image/')) {
       // Short timeout to allow state to settle, then submit
       const timer = setTimeout(() => {
-        onImageSelected(base64Data, aspectRatio, mimeType);
+        onImageSelected(base64Data, aspectRatio, mimeType, undefined, extractedPrompt || undefined);
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [preview, base64Data, mimeType, aspectRatio, onImageSelected]);
+  }, [preview, base64Data, mimeType, aspectRatio, extractedPrompt, onImageSelected]);
 
   // 粘贴功能实现
   useEffect(() => {
@@ -105,16 +115,21 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageSelected, d
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!disabled) setIsDragging(true);
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
+
     if (!disabled && e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
   };
 

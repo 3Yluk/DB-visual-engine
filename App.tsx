@@ -27,6 +27,7 @@ import { DocumentationModal } from './components/DocumentationModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { PromptLabModal } from './components/PromptLabModal';
 import ReactMarkdown from 'react-markdown';
+import { extractPromptFromPng, embedPromptInPng } from './utils/pngMetadata';
 
 const INITIAL_RESULTS = {
   [AgentRole.AUDITOR]: { role: AgentRole.AUDITOR, content: '', isStreaming: false, isComplete: false },
@@ -73,6 +74,7 @@ const App: React.FC = () => {
   const [hasKey, setHasKey] = useState(false);
   const [state, setState] = useState<AppState>(INITIAL_STATE);
   const [displayImage, setDisplayImage] = useState<string | null>(null);
+  const [uploaderKey, setUploaderKey] = useState(0); // Key to force ImageUploader remount
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>('STUDIO');
 
@@ -458,7 +460,7 @@ const App: React.FC = () => {
     setIsKeyModalOpen(true);
   };
 
-  const handleFileSelected = (base64Data: string, aspectRatio: string, mimeType: string, duration?: number) => {
+  const handleFileSelected = (base64Data: string, aspectRatio: string, mimeType: string, duration?: number, extractedPrompt?: string) => {
     setDisplayImage(`data:${mimeType};base64,${base64Data}`);
     setState(prev => ({
       ...INITIAL_STATE,
@@ -470,10 +472,17 @@ const App: React.FC = () => {
       videoAnalysisDuration: duration || null,
       isProcessing: false,
       activeRole: null,
-      detectedAspectRatio: aspectRatio
+      detectedAspectRatio: aspectRatio,
+      // Auto-populate prompt if extracted from PNG metadata
+      editablePrompt: extractedPrompt || ''
     }));
     setActiveTab('STUDIO');
     isPipelineRunning.current = false;
+
+    // Notify user if prompt was extracted
+    if (extractedPrompt) {
+      showToast('📋 已从图片中提取提示词', 'success');
+    }
   };
 
   const handleStartPipeline = () => {
@@ -482,6 +491,7 @@ const App: React.FC = () => {
 
   const handleReset = () => {
     setDisplayImage(null);
+    setUploaderKey(prev => prev + 1); // Force ImageUploader to remount
     // 新建任务：只清空提示词和分析结果，保留历史记录和生成的图片
     setState(prev => ({
       ...INITIAL_STATE,
@@ -960,8 +970,44 @@ const App: React.FC = () => {
 
   // Handler to download original image
   const handleDownloadHD = async (index: number) => {
-    const imageBase64 = state.generatedImages[index];
+    let imageBase64 = state.generatedImages[index];
     if (!imageBase64) return;
+
+    // Convert to PNG if it's a JPEG (starts with /9j/ in base64)
+    if (imageBase64.startsWith('/9j/')) {
+      try {
+        const img = new Image();
+        img.src = `data:image/jpeg;base64,${imageBase64}`;
+        await new Promise((resolve) => { img.onload = resolve; });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          // Convert to PNG base64 (remove prefix)
+          const pngDataUrl = canvas.toDataURL('image/png');
+          imageBase64 = pngDataUrl.split(',')[1];
+          console.log('[Download] Converted JPEG to PNG for metadata embedding');
+        }
+      } catch (e) {
+        console.error('Failed to convert JPEG to PNG:', e);
+      }
+    }
+
+    // Get prompt from history item or current editable prompt
+    const historyItem = state.history[index];
+    const prompt = historyItem?.prompt || state.editablePrompt;
+
+    // Embed prompt in PNG metadata for SD/Eagle compatibility
+    if (prompt) {
+      try {
+        imageBase64 = embedPromptInPng(imageBase64, prompt);
+      } catch (e) {
+        console.warn('Failed to embed prompt metadata:', e);
+      }
+    }
 
     // Create download link
     const link = document.createElement('a');
@@ -971,7 +1017,7 @@ const App: React.FC = () => {
     link.click();
     document.body.removeChild(link);
 
-    showToast('✨ 图片已下载', 'success');
+    showToast('✨ 图片已下载（含提示词元数据）', 'success');
   };
 
   // Handler to regenerate a single agent
@@ -1858,6 +1904,9 @@ const App: React.FC = () => {
 
                 // Calculate aspect ratio
                 if (file.type.startsWith('image/')) {
+                  // Try to extract prompt regardless of file type (since browser mime detection can be tricky)
+                  const extracted = extractPromptFromPng(cleanBase64);
+
                   const img = new Image();
                   img.onload = () => {
                     const ratio = img.naturalWidth / img.naturalHeight;
@@ -1871,7 +1920,7 @@ const App: React.FC = () => {
                     const closest = ratios.reduce((prev, curr) =>
                       Math.abs(curr.value - ratio) < Math.abs(prev.value - ratio) ? curr : prev
                     );
-                    handleFileSelected(cleanBase64, closest.id, mimeType);
+                    handleFileSelected(cleanBase64, closest.id, mimeType, undefined, extracted || undefined);
                     showToast('已加载新图片', 'success');
                   };
                   img.src = base64String;
@@ -1894,7 +1943,7 @@ const App: React.FC = () => {
             )}
 
             {!displayImage && !(state.generatedImages.length > 0 && state.selectedHistoryIndex >= 0) ? (
-              <ImageUploader onImageSelected={handleFileSelected} disabled={state.isProcessing} />
+              <ImageUploader key={uploaderKey} onImageSelected={handleFileSelected} disabled={state.isProcessing} />
             ) : (
               <div className="w-full h-full flex flex-col animate-in fade-in duration-500">
                 {state.generatedImages.length > 0 && state.selectedHistoryIndex >= 0 ? (
