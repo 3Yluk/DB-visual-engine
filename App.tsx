@@ -1893,12 +1893,12 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {!displayImage ? (
+            {!displayImage && !(state.generatedImages.length > 0 && state.selectedHistoryIndex >= 0) ? (
               <ImageUploader onImageSelected={handleFileSelected} disabled={state.isProcessing} />
             ) : (
               <div className="w-full h-full flex flex-col animate-in fade-in duration-500">
-                {state.generatedImages.length > 0 && state.selectedHistoryIndex !== -1 ? (
-                  isComparisonMode ? (
+                {state.generatedImages.length > 0 && state.selectedHistoryIndex >= 0 ? (
+                  displayImage && isComparisonMode ? (
                     <ImageComparisonSlider
                       beforeImage={displayImage}
                       afterImage={getImageSrc(state.generatedImages[state.selectedHistoryIndex])}
@@ -1921,7 +1921,7 @@ const App: React.FC = () => {
                       onZoomChange={handleZoomChange}
                     />
                   )
-                ) : (
+                ) : displayImage ? (
                   <ImageViewer
                     src={displayImage}
                     alt="Source"
@@ -1932,7 +1932,7 @@ const App: React.FC = () => {
                     zoom={imageZoom}
                     onZoomChange={handleZoomChange}
                   />
-                )}
+                ) : null}
               </div>
             )}
           </div>
