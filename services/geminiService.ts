@@ -32,6 +32,39 @@ let modelConfig = {
 const translateErrorMessage = (error: any): string => {
   const msg = error?.toString() || "";
 
+  // Try to extract reset time from quota error
+  const extractResetTime = (errorMsg: string): string | null => {
+    // Pattern: "quotaResetDelay": "2h59m3.181170982s"
+    const delayMatch = errorMsg.match(/quotaResetDelay["\s:]+(\d+h)?(\d+m)?[\d.]+s/i);
+    if (delayMatch) {
+      const hours = delayMatch[1] ? parseInt(delayMatch[1]) : 0;
+      const minutes = delayMatch[2] ? parseInt(delayMatch[2]) : 0;
+      if (hours > 0 || minutes > 0) {
+        return `${hours > 0 ? hours + '小时' : ''}${minutes > 0 ? minutes + '分钟' : ''}`;
+      }
+    }
+    // Pattern: "Your quota will reset after 2h59m3s"
+    const textMatch = errorMsg.match(/reset after\s+(\d+h)?(\d+m)?[\d]+s/i);
+    if (textMatch) {
+      const hours = textMatch[1] ? parseInt(textMatch[1]) : 0;
+      const minutes = textMatch[2] ? parseInt(textMatch[2]) : 0;
+      if (hours > 0 || minutes > 0) {
+        return `${hours > 0 ? hours + '小时' : ''}${minutes > 0 ? minutes + '分钟' : ''}`;
+      }
+    }
+    return null;
+  };
+
+  // Quota / Rate limit errors (429)
+  if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("QUOTA_EXHAUSTED") ||
+    msg.includes("exhausted") || msg.includes("quota") || msg.includes("Too Many Requests")) {
+    const resetTime = extractResetTime(msg);
+    if (resetTime) {
+      return `图片生成额度已用完，预计 ${resetTime}后恢复 (429)`;
+    }
+    return "图片生成额度已用完，请稍后再试 (429 Quota Exceeded)";
+  }
+
   // Specific 400 error translation for invalid image format/base64 issues
   if (msg.includes("400") || msg.includes("INVALID_ARGUMENT")) {
     if (msg.includes("Image") || msg.includes("image") || msg.includes("format") || msg.includes("decode")) {
@@ -40,19 +73,29 @@ const translateErrorMessage = (error: any): string => {
     return "请求参数无效，通常是图片格式问题 (400 Bad Request)";
   }
 
-  // Quota errors
-  if (msg.includes("429") || msg.includes("quota") || msg.includes("limit") || msg.includes("exhausted")) {
-    return "API 调用额度已耗尽 (429 Quota Exceeded)";
+  // 404 errors - model not found
+  if (msg.includes("404") || msg.includes("NOT_FOUND")) {
+    return "模型不存在或不可用，请检查模型配置 (404 Not Found)";
+  }
+
+  // Authentication errors (401/403)
+  if (msg.includes("401") || msg.includes("403") || msg.includes("UNAUTHENTICATED") || msg.includes("PERMISSION_DENIED")) {
+    return "API 密钥无效或权限不足，请检查设置 (401/403)";
   }
 
   // Network errors
-  if (msg.includes("fetch") || msg.includes("network") || msg.includes("connection")) {
+  if (msg.includes("fetch") || msg.includes("network") || msg.includes("connection") || msg.includes("ECONNREFUSED")) {
     return "网络连接失败，请检查网络设置";
   }
 
   // 500 errors
-  if (msg.includes("500") || msg.includes("Internal")) {
+  if (msg.includes("500") || msg.includes("Internal") || msg.includes("INTERNAL")) {
     return "服务器内部错误，请稍后重试 (500 Internal Error)";
+  }
+
+  // 503 Service Unavailable
+  if (msg.includes("503") || msg.includes("UNAVAILABLE")) {
+    return "服务暂时不可用，请稍后重试 (503)";
   }
 
   return msg;
@@ -441,13 +484,10 @@ export async function generateImageFromPrompt(
 
     return null;
   } catch (error: any) {
-    // If it's a translated specific error, rethrow explicitly for UI to catch
-    if (error.status === 400 || error.toString().includes("400")) {
-      const userMsg = translateErrorMessage(error);
-      throw new Error(userMsg);
-    }
     console.error("Image gen error", error);
-    throw error;
+    // Translate all errors for user-friendly messages
+    const userMsg = translateErrorMessage(error);
+    throw new Error(userMsg);
   }
 }
 

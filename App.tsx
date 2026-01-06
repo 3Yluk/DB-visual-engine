@@ -854,6 +854,7 @@ const App: React.FC = () => {
       }
 
       // Generate images sequentially
+      let lastError: string | null = null;
       for (let i = 0; i < totalCount; i++) {
         try {
           const img = await generateImageFromPrompt(p, detectedRatio, refImage, targetMimeType);
@@ -880,8 +881,15 @@ const App: React.FC = () => {
               selectedHistoryIndex: 0
             }));
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Failed to generate image ${i + 1}:`, err);
+          lastError = err?.message || "生成失败";
+
+          // Stop the loop for quota/rate limit errors - no point retrying
+          if (lastError.includes("429") || lastError.includes("额度") || lastError.includes("配额")) {
+            showToast(lastError, 'error');
+            break;
+          }
         }
       }
 
@@ -896,8 +904,10 @@ const App: React.FC = () => {
       } else {
         showToast("生成失败，模型未返回有效图片", "error");
       }
-    } catch (e) {
-      showToast("生成失败", 'error');
+    } catch (e: any) {
+      // Show specific error message from geminiService
+      const errorMsg = e?.message || "生成失败";
+      showToast(errorMsg, 'error');
       setState(prev => ({ ...prev, isGeneratingImage: false }));
     }
   };
