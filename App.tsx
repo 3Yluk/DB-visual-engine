@@ -206,6 +206,8 @@ const App: React.FC = () => {
   const [showProgressView, setShowProgressView] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(soundService.isEnabled());
   const [reverseMode, setReverseMode] = useState<'full' | 'quick'>('quick'); // 'full' = 完整4步骤, 'quick' = 单步快速逆向
+  const [generateCount, setGenerateCount] = useState(1); // 生成图片数量
+  const [isGenerateMenuOpen, setIsGenerateMenuOpen] = useState(false); // 生成菜单开关
   const mainRef = useRef<HTMLElement>(null);
 
   // Save panel width to localStorage
@@ -769,10 +771,14 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateImage = async (customPrompt?: string) => {
+  const handleGenerateImage = async (customPrompt?: string, count: number = 1) => {
     const p = customPrompt || state.editablePrompt;
     if (state.isGeneratingImage || !p) return;
     setState(prev => ({ ...prev, isGeneratingImage: true }));
+
+    const totalCount = count;
+    let successCount = 0;
+
     try {
       // Submit to Gemini for generation
       let refImage: string | null = null;
@@ -795,34 +801,57 @@ const App: React.FC = () => {
         showToast("已启用主图参考生成", "info");
       }
 
-      const img = await generateImageFromPrompt(p, detectedRatio, refImage, targetMimeType);
+      if (totalCount > 1) {
+        showToast(`正在生成 ${totalCount} 张图片...`, 'info');
+      }
 
-      if (img) {
-        const newItem: HistoryItem = {
-          id: Date.now().toString(),
-          timestamp: Date.now(),
-          originalImage: state.image!,
-          mimeType: state.mimeType,
-          prompt: p,
-          generatedImage: img,
-          // Save reference images in history for accurate restore
-          referenceImages: state.referenceImages?.length ? [...state.referenceImages] : undefined
-        };
-        await saveHistoryItem(newItem);
-        setState(prev => ({
-          ...prev,
-          generatedImage: img,
-          generatedImages: [img, ...prev.generatedImages],
-          isGeneratingImage: false,
-          history: [newItem, ...prev.history],
-          selectedHistoryIndex: 0
-        }));
-        setTimeout(() => handleRunQA(), 500);
+      // Generate images sequentially
+      for (let i = 0; i < totalCount; i++) {
+        try {
+          const img = await generateImageFromPrompt(p, detectedRatio, refImage, targetMimeType);
+
+          if (img) {
+            const newItem: HistoryItem = {
+              id: (Date.now() + i).toString(),
+              timestamp: Date.now() + i,
+              originalImage: state.image!,
+              mimeType: state.mimeType,
+              prompt: p,
+              generatedImage: img,
+              referenceImages: state.referenceImages?.length ? [...state.referenceImages] : undefined
+            };
+            await saveHistoryItem(newItem);
+            successCount++;
+
+            // Update state immediately for each successful generation
+            setState(prev => ({
+              ...prev,
+              generatedImage: img,
+              generatedImages: [img, ...prev.generatedImages],
+              history: [newItem, ...prev.history],
+              selectedHistoryIndex: 0
+            }));
+          }
+        } catch (err) {
+          console.error(`Failed to generate image ${i + 1}:`, err);
+        }
+      }
+
+      setState(prev => ({ ...prev, isGeneratingImage: false }));
+
+      if (successCount > 0) {
+        if (totalCount === 1) {
+          setTimeout(() => handleRunQA(), 500);
+        } else {
+          showToast(`成功生成 ${successCount}/${totalCount} 张图片`, 'success');
+        }
       } else {
-        setState(prev => ({ ...prev, isGeneratingImage: false }));
         showToast("生成失败，模型未返回有效图片", "error");
       }
-    } catch (e) { showToast("生成失败", 'error'); setState(prev => ({ ...prev, isGeneratingImage: false })); }
+    } catch (e) {
+      showToast("生成失败", 'error');
+      setState(prev => ({ ...prev, isGeneratingImage: false }));
+    }
   };
 
   const setSelectedHistoryIndex = (index: number) => {
@@ -1296,14 +1325,44 @@ const App: React.FC = () => {
                 <Icons.Sparkles size={14} />
                 生成提示词
               </button>
-              <button
-                onClick={() => handleGenerateImage()}
-                disabled={state.isGeneratingImage || !state.editablePrompt}
-                className="flex-1 py-2 bg-stone-100 text-black rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-40 hover:bg-white transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)]"
-              >
-                {state.isGeneratingImage ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.Play size={14} />}
-                生成图片
-              </button>
+              {/* 生成图片按钮组 - 带数量选择菜单 */}
+              <div className="relative flex-1 flex">
+                <button
+                  onClick={() => handleGenerateImage(undefined, generateCount)}
+                  disabled={state.isGeneratingImage || !state.editablePrompt}
+                  className="flex-1 py-2 bg-stone-100 text-black rounded-l-xl text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-40 hover:bg-white transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+                >
+                  {state.isGeneratingImage ? <Icons.RefreshCw size={14} className="animate-spin" /> : <Icons.Play size={14} />}
+                  生成{generateCount > 1 ? ` ${generateCount}张` : '图片'}
+                </button>
+                <button
+                  onClick={() => setIsGenerateMenuOpen(!isGenerateMenuOpen)}
+                  disabled={state.isGeneratingImage || !state.editablePrompt}
+                  className="px-2 py-2 bg-stone-100 text-black rounded-r-xl text-xs font-bold flex items-center justify-center disabled:opacity-40 hover:bg-white transition-all border-l border-stone-300"
+                >
+                  <Icons.ChevronDown size={12} className={`transition-transform ${isGenerateMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {isGenerateMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsGenerateMenuOpen(false)} />
+                    <div className="absolute bottom-full left-0 right-0 mb-1 bg-stone-800 border border-stone-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                      {[1, 2, 4].map(num => (
+                        <div
+                          key={num}
+                          onClick={() => {
+                            setGenerateCount(num);
+                            setIsGenerateMenuOpen(false);
+                          }}
+                          className={`px-3 py-2 hover:bg-stone-700 cursor-pointer text-xs transition-colors flex items-center gap-2 ${num === generateCount ? 'bg-stone-700 text-orange-400' : 'text-stone-300'}`}
+                        >
+                          {num === generateCount && <Icons.Check size={12} />}
+                          <span>生成 {num} 张</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               {/* Quality Check Button Hidden
               <button
                 onClick={() => {
