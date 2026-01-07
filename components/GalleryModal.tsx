@@ -18,6 +18,8 @@ interface GalleryModalProps {
     prompts?: string[];
     onDownload?: (index: number) => void;
     onEdit?: (index: number) => void;
+    onDelete?: (index: number) => void;
+    onAddToComparison?: (index: number) => void;
 }
 
 interface ImageDimensions {
@@ -41,7 +43,9 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
     history,
     prompts = [],
     onDownload,
-    onEdit
+    onEdit,
+    onDelete,
+    onAddToComparison
 }) => {
     const { t } = useI18n();
     const [viewMode, setViewMode] = useState<'timeline' | 'grouped'>('timeline');
@@ -593,6 +597,15 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
                                 {selectedIndex + 1} / {visibleImages.length}
                             </div>
                             <div className="flex gap-2">
+                                {onAddToComparison && (
+                                    <button
+                                        onClick={() => { onAddToComparison(globalIndex); onClose(); }}
+                                        className="p-3 bg-stone-900/60 hover:bg-orange-900/80 rounded-xl text-stone-300 hover:text-orange-300 transition-all backdrop-blur-md"
+                                        title="添加到对比模式"
+                                    >
+                                        <Icons.Columns size={20} />
+                                    </button>
+                                )}
                                 {onDownload && (
                                     <button
                                         onClick={() => onDownload(globalIndex)}
@@ -600,6 +613,24 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
                                         title="下载"
                                     >
                                         <Icons.Download size={20} />
+                                    </button>
+                                )}
+                                {onDelete && (
+                                    <button
+                                        onClick={() => {
+                                            onDelete(globalIndex);
+                                            // Navigate to previous or next after delete
+                                            if (visibleImages.length <= 1) {
+                                                setSelectedIndex(null);
+                                            } else if (selectedIndex >= visibleImages.length - 1) {
+                                                setSelectedIndex(selectedIndex - 1);
+                                                setFocusedIndex(selectedIndex - 1);
+                                            }
+                                        }}
+                                        className="p-3 bg-stone-900/60 hover:bg-rose-900/80 rounded-xl text-stone-300 hover:text-rose-300 transition-all backdrop-blur-md"
+                                        title="删除"
+                                    >
+                                        <Icons.Trash2 size={20} />
                                     </button>
                                 )}
                                 <button
@@ -801,15 +832,36 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
 
                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 pointer-events-none" />
 
-                                                {onEdit && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onEdit(globalIndex); }}
-                                                        className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-black/80 text-white/70 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-md shadow-lg"
-                                                        title="编辑"
-                                                    >
-                                                        <Icons.Edit2 size={14} strokeWidth={2} />
-                                                    </button>
-                                                )}
+                                                {/* Action buttons row - shown on hover */}
+                                                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                                                    {onAddToComparison && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onAddToComparison(globalIndex); onClose(); }}
+                                                            className="p-2 bg-black/50 hover:bg-orange-900/80 text-white/70 hover:text-orange-300 rounded-lg backdrop-blur-md shadow-lg"
+                                                            title="添加到对比模式"
+                                                        >
+                                                            <Icons.Columns size={14} strokeWidth={2} />
+                                                        </button>
+                                                    )}
+                                                    {onEdit && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onEdit(globalIndex); }}
+                                                            className="p-2 bg-black/50 hover:bg-black/80 text-white/70 hover:text-white rounded-lg backdrop-blur-md shadow-lg"
+                                                            title="编辑"
+                                                        >
+                                                            <Icons.Edit2 size={14} strokeWidth={2} />
+                                                        </button>
+                                                    )}
+                                                    {onDelete && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onDelete(globalIndex); }}
+                                                            className="p-2 bg-black/50 hover:bg-rose-900/80 text-white/70 hover:text-rose-300 rounded-lg backdrop-blur-md shadow-lg"
+                                                            title="删除"
+                                                        >
+                                                            <Icons.Trash2 size={14} strokeWidth={2} />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })}

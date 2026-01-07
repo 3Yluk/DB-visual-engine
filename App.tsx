@@ -2111,6 +2111,14 @@ const App: React.FC = () => {
         prompts={state.history.map(h => h.prompt)}
         onDownload={handleDownloadHD}
         onEdit={handleGalleryEdit}
+        onDelete={handleDeleteHistoryItem}
+        onAddToComparison={(index) => {
+          const imgUrl = getOriginalFromHistory(state.history, index);
+          setDisplayImage(imgUrl);
+          setIsComparisonMode(true);
+          loadHistoryItem(index);
+          showToast(t('gallery.addedToComparisonLeft'), 'success');
+        }}
       />
 
       {/* Global Drag Overlay Removed */}
