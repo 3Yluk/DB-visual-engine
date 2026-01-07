@@ -1549,74 +1549,73 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2">
               {/* @ Mention Button with Dropdown */}
               <div className="relative flex-shrink-0">
-                {(state.image || state.generatedImage) && (
-                  <>
-                    <button
-                      onClick={() => setIsMentionMenuOpen(!isMentionMenuOpen)}
-                      className={`flex items-center justify-center px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap border ${isMentionMenuOpen
+                <button
+                  onClick={() => (state.image || state.generatedImage) && setIsMentionMenuOpen(!isMentionMenuOpen)}
+                  disabled={!state.image && !state.generatedImage}
+                  className={`flex items-center justify-center px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${!state.image && !state.generatedImage
+                      ? 'bg-stone-900 text-stone-600 border-stone-800 cursor-not-allowed opacity-50'
+                      : isMentionMenuOpen
                         ? 'bg-amber-900/40 text-amber-400 border-amber-500/30'
                         : 'bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-amber-400 border-transparent'
-                        }`}
-                      title="引用图片"
-                    >
-                      @
-                    </button>
-                    {isMentionMenuOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setIsMentionMenuOpen(false)} />
-                        <div className="absolute bottom-full left-0 mb-1 bg-stone-900 border border-stone-700 rounded-lg shadow-xl z-50 overflow-hidden min-w-[120px]">
-                          <button
-                            onClick={() => {
-                              handleTranslatePrompt('CN');
-                              setIsMentionMenuOpen(false);
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300 whitespace-nowrap"
-                          >
-                            <Icons.Languages size={14} />
-                            <span className="text-xs">{t('studio.translateToCN')}</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              handleTranslatePrompt('EN');
-                              setIsMentionMenuOpen(false);
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300 whitespace-nowrap"
-                          >
-                            <Icons.Languages size={14} />
-                            <span className="text-xs">{t('studio.translateToEN')}</span>
-                          </button>
-                          <div className="h-px bg-stone-800 my-1 mx-2" />
-                          {state.image && (
-                            <button
-                              onClick={() => {
-                                const tag = '@原图';
-                                setAiInput(prev => prev.includes(tag) ? prev.replace(tag, '').trim() : (prev + ' ' + tag).trim());
-                                setIsMentionMenuOpen(false);
-                              }}
-                              className={`w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors whitespace-nowrap ${aiInput.includes('@原图') ? 'text-orange-400' : 'text-stone-300'}`}
-                            >
-                              <Icons.Image size={14} />
-                              <span className="text-xs">{t('studio.mention.original')}</span>
-                              {aiInput.includes('@原图') && <Icons.Check size={12} className="ml-auto" />}
-                            </button>
-                          )}
-                          {state.generatedImage && (
-                            <button
-                              onClick={() => {
-                                const tag = '@生成图';
-                                setAiInput(prev => prev.includes(tag) ? prev.replace(tag, '').trim() : (prev + ' ' + tag).trim());
-                                setIsMentionMenuOpen(false);
-                              }}
-                              className={`w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors whitespace-nowrap ${aiInput.includes('@生成图') ? 'text-emerald-400' : 'text-stone-300'}`}
-                            >
-                              <Icons.Image size={14} />
-                              <span className="text-xs">{t('studio.mention.generated')}</span>
-                              {aiInput.includes('@生成图') && <Icons.Check size={12} className="ml-auto" />}
-                            </button>
-                          )}
-                        </div>
-                      </>
-                    )}
+                    }`}
+                  title={state.image || state.generatedImage ? "引用图片" : "请先上传或生成图片"}
+                >
+                  @
+                </button>
+                {isMentionMenuOpen && (state.image || state.generatedImage) && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsMentionMenuOpen(false)} />
+                    <div className="absolute bottom-full left-0 mb-1 bg-stone-900 border border-stone-700 rounded-lg shadow-xl z-50 overflow-hidden min-w-[120px]">
+                      <button
+                        onClick={() => {
+                          handleTranslatePrompt('CN');
+                          setIsMentionMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300 whitespace-nowrap"
+                      >
+                        <Icons.Languages size={14} />
+                        <span className="text-xs">{t('studio.translateToCN')}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleTranslatePrompt('EN');
+                          setIsMentionMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300 whitespace-nowrap"
+                      >
+                        <Icons.Languages size={14} />
+                        <span className="text-xs">{t('studio.translateToEN')}</span>
+                      </button>
+                      <div className="h-px bg-stone-800 my-1 mx-2" />
+                      {state.image && (
+                        <button
+                          onClick={() => {
+                            const tag = '@原图';
+                            setAiInput(prev => prev.includes(tag) ? prev.replace(tag, '').trim() : (prev + ' ' + tag).trim());
+                            setIsMentionMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors whitespace-nowrap ${aiInput.includes('@原图') ? 'text-orange-400' : 'text-stone-300'}`}
+                        >
+                          <Icons.Image size={14} />
+                          <span className="text-xs">{t('studio.mention.original')}</span>
+                          {aiInput.includes('@原图') && <Icons.Check size={12} className="ml-auto" />}
+                        </button>
+                      )}
+                      {state.generatedImage && (
+                        <button
+                          onClick={() => {
+                            const tag = '@生成图';
+                            setAiInput(prev => prev.includes(tag) ? prev.replace(tag, '').trim() : (prev + ' ' + tag).trim());
+                            setIsMentionMenuOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors whitespace-nowrap ${aiInput.includes('@生成图') ? 'text-emerald-400' : 'text-stone-300'}`}
+                        >
+                          <Icons.Image size={14} />
+                          <span className="text-xs">{t('studio.mention.generated')}</span>
+                          {aiInput.includes('@生成图') && <Icons.Check size={12} className="ml-auto" />}
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
