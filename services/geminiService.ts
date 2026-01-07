@@ -389,6 +389,7 @@ ${originalPrompt}
 export async function generateImageFromPrompt(
   promptContext: string,
   aspectRatio: string,
+  is4K: boolean = false,
   refImage?: string | null,
   mimeType: string = "image/jpeg",
   signal?: AbortSignal
@@ -420,26 +421,57 @@ export async function generateImageFromPrompt(
 
   const detectedRatio = parseAspectRatioFromPrompt(promptContext);
 
-  // Select model variant based on aspect ratio
-  const baseModel = modelConfig.image || "imagen-3.0-generate-001";
+  // Select model variant based on aspect ratio and quality
+  const baseModel = modelConfig.image || "gemini-3-pro-image";
   let modelId = baseModel;
 
-  // Custom proxy logic: Append suffixes for specific aspect ratios if needed
-  // Only apply this in 'custom' mode to avoid 404s on Official API
+  // Build model ID based on mode
   if (currentConfig.mode === 'custom') {
-    if (detectedRatio === "16:9" || detectedRatio === "4:3") {
-      modelId = baseModel.includes("-4k") ? `${baseModel.replace("-4k", "")}-4k-16x9` : `${baseModel}-16x9`;
-    } else if (detectedRatio === "9:16" || detectedRatio === "3:4") {
-      modelId = baseModel.includes("-4k") ? `${baseModel.replace("-4k", "")}-4k-9x16` : `${baseModel}-9x16`;
-    }
-  }
+    // Custom mode: Build model name with suffixes
+    // Base model should be clean (without -4k or ratio suffixes)
+    let cleanBase = baseModel
+      .replace(/-4k-16x9$/, '')
+      .replace(/-4k-9x16$/, '')
+      .replace(/-16x9$/, '')
+      .replace(/-9x16$/, '')
+      .replace(/-4k$/, '');
 
-  console.log(`[Image Gen] Detected ratio: ${detectedRatio}, Using model: ${modelId}`);
+    // Build model ID: base + 4k (if enabled) + ratio suffix
+    modelId = cleanBase;
+
+    // Add 4K suffix if enabled
+    if (is4K) {
+      modelId += '-4k';
+    }
+
+    // Add ratio suffix (1:1 has no suffix)
+    if (detectedRatio === "16:9" || detectedRatio === "4:3") {
+      modelId += '-16x9';
+    } else if (detectedRatio === "9:16" || detectedRatio === "3:4") {
+      modelId += '-9x16';
+    }
+    // 1:1 has no suffix
+  }
+  // For official mode, we'll pass aspectRatio in the config below
+
+  console.log(`[Image Gen] Mode: ${currentConfig.mode}, Ratio: ${detectedRatio}, 4K: ${is4K}, Model: ${modelId}`);
 
   try {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
     let response;
+
+    // Build generation config for official mode
+    const generationConfig: any = {};
+    if (currentConfig.mode === 'official') {
+      // Official API supports aspectRatio parameter
+      generationConfig.aspectRatio = detectedRatio;
+      // Note: Official API uses imageSize parameter for resolution (1K or 2K)
+      // 4K is not directly supported, but 2K is the max
+      if (is4K) {
+        generationConfig.imageSize = '2K';
+      }
+    }
 
     if (refImage) {
       const cleanRef = refImage.replace(/^data:image\/\w+;base64,/, "");
@@ -448,12 +480,14 @@ export async function generateImageFromPrompt(
         contents: [
           { inlineData: { mimeType, data: cleanRef } },
           promptContext
-        ]
+        ],
+        ...(Object.keys(generationConfig).length > 0 && { generationConfig })
       });
     } else {
       response = await client.models.generateContent({
         model: modelId,
-        contents: promptContext
+        contents: promptContext,
+        ...(Object.keys(generationConfig).length > 0 && { generationConfig })
       });
     }
 

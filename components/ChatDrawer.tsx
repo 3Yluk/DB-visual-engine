@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Icons } from './Icons';
-import { ChatMessage, SkillType } from './ChatPanel';
+import { ChatMessage, SkillType } from '../types';
 
 interface ChatDrawerProps {
     isOpen: boolean;

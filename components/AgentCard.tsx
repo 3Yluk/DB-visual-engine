@@ -2,6 +2,8 @@
 import React from 'react';
 import { AgentConfig, AnalysisResult } from '../types';
 import { Icons } from './Icons';
+import { useI18n } from '../hooks/useI18n';
+import { AgentRole } from '../types';
 
 interface AgentCardProps {
   config: AgentConfig;
@@ -14,32 +16,47 @@ interface AgentCardProps {
   onStartPipeline?: () => void;
 }
 
+// Agent role to translation key mapping
+const agentRoleToKey: Record<AgentRole, string> = {
+  [AgentRole.AUDITOR]: 'agent.auditor',
+  [AgentRole.DESCRIPTOR]: 'agent.descriptor',
+  [AgentRole.ARCHITECT]: 'agent.architect',
+  [AgentRole.SYNTHESIZER]: 'agent.synthesizer',
+  [AgentRole.CRITIC]: 'agent.critic',
+  [AgentRole.SORA_VIDEOGRAPHER]: 'agent.sora',
+};
+
 export const AgentCard: React.FC<AgentCardProps> = ({ config, result, isActive, isPending, onRegenerate, onContentChange, onCopy, onStartPipeline }) => {
+  const { t } = useI18n();
   const isComplete = result?.isComplete;
   const content = result?.content || '';
+
+  // Use translation for agent name instead of config.name
+  const agentName = t(agentRoleToKey[config.id] as any);
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-stone-800 flex-shrink-0">
-        <div>
-          <h2 className="text-base font-serif font-bold text-stone-200">{config.name}</h2>
-          <p className="text-[10px] text-stone-500 font-medium tracking-wide uppercase mt-0.5">{config.description}</p>
-        </div>
+       <div className="flex items-center justify-between pb-4 border-b border-stone-800 flex-shrink-0">
+         <div>
+           <h2 className="text-base font-serif font-bold text-stone-200">{agentName}</h2>
+           <p className="text-[10px] text-stone-500 font-medium tracking-wide uppercase mt-0.5">{config.description}</p>
+         </div>
 
-        <div className="flex items-center gap-1.5">
-          {/* Status Indicators */}
-          {isComplete && (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold">
-              <Icons.CheckCircle2 size={12} /> 已完成
-            </div>
-          )}
-          {isActive && !isComplete && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-800 text-stone-400 text-[10px] font-bold">
-              <Icons.RefreshCw className="animate-spin" size={12} />
-              分析中
-            </div>
-          )}
+         <div className="flex items-center gap-1.5">
+           <div>
+             {isComplete && (
+               <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold">
+                 <Icons.CheckCircle2 size={12} /> 已完成
+               </div>
+             )}
+             {isActive && !isComplete && (
+               <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-800 text-stone-400 text-[10px] font-bold">
+                 <Icons.RefreshCw className="animate-spin" size={12} />
+                 分析中
+               </div>
+             )}
+           </div>
         </div>
       </div>
 

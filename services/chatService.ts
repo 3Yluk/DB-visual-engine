@@ -149,7 +149,7 @@ ${analysis.subject}
 
 // Parse suggestions from QA content
 function parseSuggestionsFromContent(content: string): string[] {
-    const markers = ["调优建议", "调优指令", "Optimization Suggestions", "Optimization"];
+    const markers = ["调优建议", "调优指令", "Optimization Suggestions", "Optimization", "优化建议"];
     let sectionText = "";
 
     for (const marker of markers) {
@@ -163,22 +163,49 @@ function parseSuggestionsFromContent(content: string): string[] {
     if (!sectionText) return [];
 
     const suggestions: string[] = [];
-    const lines = sectionText.split('\n');
 
-    for (const line of lines) {
-        const trimmed = line.trim();
-        const match = trimmed.match(/^[\*\-]?\s*([1-3])[.\)、]\s*(.+)/);
-        if (match && match[2]) {
-            let suggestion = match[2]
-                .replace(/^\*\*/, '')
-                .replace(/\*\*$/, '')
-                .replace(/^\*\*(.+?)\*\*:?\s*/, '$1: ')
-                .trim();
-            if (suggestion.length > 5) {
-                suggestions.push(suggestion);
+    // Strategy 1: Split by lines (standard format)
+    const lines = sectionText.split('\n');
+    if (lines.length > 2) {
+        for (const line of lines) {
+            const trimmed = line.trim();
+            const numberedMatch = trimmed.match(/^[\*\-]?\s*(\d)[.\)、:]\s*(.+)/);
+            if (numberedMatch && numberedMatch[2]) {
+                const suggestion = cleanSuggestionText(numberedMatch[2]);
+                if (suggestion.length > 5) suggestions.push(suggestion);
+                continue;
+            }
+            const bulletMatch = trimmed.match(/^[\*\-•]\s+(.+)/);
+            if (bulletMatch && bulletMatch[1] && !trimmed.includes('达标') && !trimmed.includes('偏差')) {
+                const suggestion = cleanSuggestionText(bulletMatch[1]);
+                if (suggestion.length > 10) suggestions.push(suggestion);
+            }
+        }
+    }
+
+    // Strategy 2: If lines failed (compressed text) or not enough suggestions found, try global regex
+    if (suggestions.length === 0) {
+        // Match "1. Content 2. Content" pattern
+        const globalMatches = [...sectionText.matchAll(/(?:^|\s)(\d)[.\)、:]\s*([^\d]+?)(?=(?:\s\d[.\)、:])|$)/g)];
+        for (const match of globalMatches) {
+            if (match[2]) {
+                const suggestion = cleanSuggestionText(match[2]);
+                if (suggestion.length > 5) suggestions.push(suggestion);
             }
         }
     }
 
     return suggestions.slice(0, 5);
 }
+
+// Clean up suggestion text by removing markdown formatting
+function cleanSuggestionText(text: string): string {
+    return text
+        .replace(/^\*\*/, '')           // Remove leading **
+        .replace(/\*\*$/, '')           // Remove trailing **
+        .replace(/^\*\*(.+?)\*\*:?\s*/, '$1: ')  // Convert **header**: to header:
+        .replace(/\*\*/g, '')           // Remove all remaining **
+        .replace(/`/g, '')              // Remove backticks
+        .trim();
+}
+

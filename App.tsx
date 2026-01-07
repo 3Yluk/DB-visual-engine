@@ -36,6 +36,7 @@ import { DocumentationModal } from './components/DocumentationModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { PromptLabModal } from './components/PromptLabModal';
 import { GalleryModal } from './components/GalleryModal';
+import { AspectRatioSelector } from './components/AspectRatioSelector';
 import ReactMarkdown from 'react-markdown';
 import { extractPromptFromPng, embedPromptInPng } from './utils/pngMetadata';
 import { generateThumbnail } from './utils/thumbnailUtils';
@@ -281,6 +282,8 @@ const App: React.FC = () => {
   const [reverseMode, setReverseMode] = useState<'full' | 'quick'>('quick'); // 'full' = 完整4步骤, 'quick' = 单步快速逆向
   const [generateCount, setGenerateCount] = useState(1); // 生成图片数量
   const [isGenerateMenuOpen, setIsGenerateMenuOpen] = useState(false); // 生成菜单开关
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1'); // 选择的比例
+  const [is4K, setIs4K] = useState(false); // 是否启用 4K 画质
   const mainRef = useRef<HTMLElement>(null);
 
   // Save panel width to localStorage
@@ -370,7 +373,7 @@ const App: React.FC = () => {
         });
       } catch (e: any) {
         if (e.name === 'QuotaExceededError') {
-          showToast('本地存储已满，请及时清理历史记录', 'error');
+          showToast(t('toast.storageFull'), 'error');
         }
       }
     }
@@ -502,7 +505,7 @@ const App: React.FC = () => {
     setActiveTab('STUDIO');
     isPipelineRunning.current = false;
 
-      // Notify user if prompt was extracted
+    // Notify user if prompt was extracted
     if (extractedPrompt) {
       showToast(t('toast.promptExtracted'), 'success');
     }
@@ -553,9 +556,9 @@ const App: React.FC = () => {
         editablePrompt: translated,
         promptCache: { ...prev.promptCache, [target]: translated }
       }));
-      pushPromptHistory(translated, target === 'EN' ? '英文翻译' : '中文翻译');
+      pushPromptHistory(translated, target === 'EN' ? t('history.reverse') : t('history.reverse'));
       setCurrentLang(target);
-    } catch (e) { showToast("翻译失败", "error"); }
+    } catch (e) { showToast(t('toast.translateFailed'), "error"); }
   };
 
   const parseSuggestions = (content: string) => {
@@ -667,7 +670,7 @@ const App: React.FC = () => {
       setTimeout(() => {
         setShowProgressView(false);
         setActiveTab('STUDIO');
-        showToast("✨ 提示词生成完成！", "success");
+        showToast(t('toast.promptHistoryAdded'), "success");
       }, 2000);
 
     } catch (error) {
@@ -701,7 +704,7 @@ const App: React.FC = () => {
       steps: [{
         role: AgentRole.SYNTHESIZER,
         name: AGENTS[AgentRole.SYNTHESIZER].name,
-        description: '单步快速逆向分析',
+        description: t('reverse.quick.title'),
         status: PipelineStepStatus.RUNNING,
         progress: 0,
         streamingContent: '',
@@ -774,7 +777,7 @@ const App: React.FC = () => {
         promptCache: { ...prev.promptCache, CN: selectedSuggestion }
       }));
 
-      pushPromptHistory(selectedSuggestion, '快速逆向');
+      pushPromptHistory(selectedSuggestion, t('history.reverse'));
 
       soundService.playComplete();
 
@@ -782,7 +785,7 @@ const App: React.FC = () => {
       setTimeout(() => {
         setShowProgressView(false);
         setActiveTab('STUDIO');
-        showToast("✨ 逆向完成！", "success");
+        showToast(t('toast.reverseComplete'), "success");
       }, 2000);
 
     } catch (error) {
@@ -804,7 +807,7 @@ const App: React.FC = () => {
         });
       }
 
-      showToast("逆向失败", "error");
+      showToast(t('toast.reverseFailed'), "error");
     } finally {
       setState(prev => ({ ...prev, isProcessing: false }));
       isPipelineRunning.current = false;
@@ -828,7 +831,7 @@ const App: React.FC = () => {
       }));
     } catch (e) {
       setState(prev => ({ ...prev, isRefining: false }));
-      showToast("质检失败", "error");
+      showToast(t('toast.qaFailed'), "error");
     }
   };
 
@@ -843,11 +846,11 @@ const App: React.FC = () => {
         ...prev, editablePrompt: newPrompt, isRefiningPrompt: false,
         promptCache: { CN: '', EN: '' }
       }));
-      pushPromptHistory(newPrompt, '应用修订');
-      showToast("已应用修订，请查看 Prompt Studio", "success");
+      pushPromptHistory(newPrompt, t('history.applyRefinement'));
+      showToast(t('toast.appliedRefinement'), "success");
     } catch (e) {
       setState(prev => ({ ...prev, isRefiningPrompt: false }));
-      showToast("应用修订失败", "error");
+      showToast(t('toast.applyRefinementFailed'), "error");
     }
   };
 
@@ -863,33 +866,34 @@ const App: React.FC = () => {
       // Submit to Gemini for generation
       let refImage: string | null = null;
       let targetMimeType = state.mimeType || 'image/jpeg';
-      let detectedRatio = state.detectedAspectRatio;
+      // Use user-selected aspect ratio if set, otherwise fallback to detected
+      let detectedRatio = selectedAspectRatio || state.detectedAspectRatio;
 
       // Logic: Prioritize dragged reference images (User explicit intent)
       if (state.referenceImages && state.referenceImages.length > 0) {
         refImage = state.referenceImages[0].url;
         targetMimeType = state.referenceImages[0].mimeType;
-        // Logic: Use reference image's aspect ratio
-        if (state.referenceImages[0].aspectRatio) {
+        // Logic: Use reference image's aspect ratio only if user hasn't manually selected
+        if (!selectedAspectRatio && state.referenceImages[0].aspectRatio) {
           detectedRatio = state.referenceImages[0].aspectRatio;
         }
-        showToast("已启用参考图生成", "info");
+        showToast(t('toast.referenceEnabled'), "info");
       } else if (state.useReferenceImage && state.image) {
         // Fallback to Main Image if toggle is ON
         refImage = state.image;
         targetMimeType = state.mimeType;
-        showToast("已启用主图参考生成", "info");
+        showToast(t('toast.referenceMainEnabled'), "info");
       }
 
       if (totalCount > 1) {
-        showToast(`正在生成 ${totalCount} 张图片...`, 'info');
+        showToast(t('toast.generatingImages', { count: totalCount }), 'info');
       }
 
       // Generate images sequentially
       let lastError: string | null = null;
       for (let i = 0; i < totalCount; i++) {
         try {
-          const img = await generateImageFromPrompt(p, detectedRatio, refImage, targetMimeType);
+          const img = await generateImageFromPrompt(p, detectedRatio, is4K, refImage, targetMimeType);
 
           if (img) {
             // Generate thumbnail for gallery (lightweight)
@@ -941,10 +945,10 @@ const App: React.FC = () => {
         if (totalCount === 1) {
           setTimeout(() => handleRunQA(), 500);
         } else {
-          showToast(`成功生成 ${successCount}/${totalCount} 张图片`, 'success');
+          showToast(t('toast.successGenerated', { count: successCount, total: totalCount }), 'success');
         }
       } else {
-        showToast("生成失败，模型未返回有效图片", "error");
+        showToast(t('toast.generateFailed'), "error");
       }
     } catch (e: any) {
       // Show specific error message from geminiService
@@ -997,7 +1001,7 @@ const App: React.FC = () => {
       };
     });
 
-    showToast('已删除记录', 'info');
+    showToast(t('toast.deleted'), 'info');
   };
 
   // Handler to download original image
@@ -1005,7 +1009,7 @@ const App: React.FC = () => {
     // Get original image from history (not from generatedImages which now contains thumbnails)
     const historyItem = state.history[index];
     if (!historyItem?.generatedImage) {
-      showToast('无法获取原图', 'error');
+      showToast(t('toast.noValidImage'), 'error');
       return;
     }
 
@@ -1054,7 +1058,7 @@ const App: React.FC = () => {
     link.click();
     document.body.removeChild(link);
 
-    showToast('✨ 图片已下载（含提示词元数据）', 'success');
+    showToast(t('toast.imageDownloaded'), 'success');
   };
 
   // Handler to regenerate a single agent
@@ -1114,9 +1118,9 @@ const App: React.FC = () => {
       if (skillType === 'quality-check') {
         // Execute quality check skill
         if (!state.image || !state.generatedImage) {
-          setChatMessages(prev => [...prev, createAssistantMessage('请先生成图片后再进行质检')]);
+          setChatMessages(prev => [...prev, createAssistantMessage(t('chat.pleaseGenerateFirst'))]);
         } else {
-          const streamingMsg = createAssistantMessage('正在执行质检分析...', true);
+          const streamingMsg = createAssistantMessage(t('chat.executingQA'), true);
           setChatMessages(prev => [...prev, streamingMsg]);
 
           const { content, suggestions } = await executeQualityCheck(
@@ -1132,15 +1136,15 @@ const App: React.FC = () => {
           // Replace streaming message with skill result
           setChatMessages(prev => {
             const filtered = prev.filter(m => m.id !== streamingMsg.id);
-            return [...filtered, createSkillResultMessage('quality-check', '', suggestions)];
+            return [...filtered, createSkillResultMessage('quality-check', content, suggestions)];
           });
         }
       } else if (skillType === 'reverse') {
         // Reverse engineering skill
         if (!state.image) {
-          setChatMessages(prev => [...prev, createAssistantMessage('请先上传图片再进行逆向分析')]);
+          setChatMessages(prev => [...prev, createAssistantMessage(t('chat.uploadImageFirst'))]);
         } else {
-          const streamingMsg = createAssistantMessage('正在分析画面...', true);
+          const streamingMsg = createAssistantMessage(t('chat.generatingImages'), true);
           setChatMessages(prev => [...prev, streamingMsg]);
 
           try {
@@ -1168,13 +1172,13 @@ const App: React.FC = () => {
           m.id === streamingMsg.id ? { ...m, content: '已根据你的建议修改了提示词，请查看左侧编辑器。', isStreaming: false } : m
         ));
       } else if (skillType === 'generate') {
-        setChatMessages(prev => [...prev, createAssistantMessage('正在生成图片...')]);
+        setChatMessages(prev => [...prev, createAssistantMessage(t('chat.generatingImages'))]);
         handleGenerateImage();
       } else if (skillType === 'translate') {
-        setChatMessages(prev => [...prev, createAssistantMessage('正在翻译...')]);
+        setChatMessages(prev => [...prev, createAssistantMessage(t('chat.translating'))]);
         handleTranslatePrompt(currentLang === 'CN' ? 'EN' : 'CN');
       } else {
-        setChatMessages(prev => [...prev, createAssistantMessage('我可以帮你：\n- 质检分析\n- 修改提示词\n- 翻译\n- 生成图片\n\n请告诉我你想要做什么？')]);
+        setChatMessages(prev => [...prev, createAssistantMessage(t('chat.help'))]);
       }
     } catch (e) {
       setChatMessages(prev => [...prev, createAssistantMessage('抱歉，处理出错了。请重试。')]);
@@ -1230,26 +1234,26 @@ const App: React.FC = () => {
         <div className="flex flex-col h-full bg-stone-900 relative">
           {/* Header */}
           <div className="px-6 pt-5 pb-3 border-b border-stone-800 flex-shrink-0">
-             <div className="flex items-center justify-between">
-               <div>
-                 <h3 className="font-bold text-stone-300 text-base font-serif">{t('panel.promptStudio')}</h3>
-                 <p className="text-[10px] text-stone-500 font-medium uppercase mt-0.5">{t('panel.promptEditor')}</p>
-               </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-stone-300 text-base font-serif">{t('panel.promptStudio')}</h3>
+                <p className="text-[10px] text-stone-500 font-medium uppercase mt-0.5">{t('panel.promptEditor')}</p>
+              </div>
 
-               <div className="flex items-center gap-1 bg-stone-800 rounded-lg p-1">
-                 <button
-                   onClick={() => setReverseMode('full')}
-                   className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${reverseMode === 'full' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-500 hover:text-stone-300'}`}
-                 >
-                   {t('studio.mode.full')}
-                 </button>
-                 <button
-                   onClick={() => setReverseMode('quick')}
-                   className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${reverseMode === 'quick' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-500 hover:text-stone-300'}`}
-                 >
-                   {t('studio.mode.quick')}
-                 </button>
-               </div>
+              <div className="flex items-center gap-1 bg-stone-800 rounded-lg p-1">
+                <button
+                  onClick={() => setReverseMode('full')}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${reverseMode === 'full' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-500 hover:text-stone-300'}`}
+                >
+                  {t('studio.mode.full')}
+                </button>
+                <button
+                  onClick={() => setReverseMode('quick')}
+                  className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${reverseMode === 'quick' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-500 hover:text-stone-300'}`}
+                >
+                  {t('studio.mode.quick')}
+                </button>
+              </div>
               {/* Version Selector - Custom Dropdown */}
               <div className="relative">
                 <button
@@ -1330,7 +1334,7 @@ const App: React.FC = () => {
               {isDraggingReference && (
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center text-emerald-500">
                   <Icons.Download size={32} />
-                  <span className="text-xs font-bold mt-2">添加参考图</span>
+                  <span className="text-xs font-bold mt-2">{t('panel.addReference')}</span>
                 </div>
               )}
             </div>
@@ -1453,7 +1457,7 @@ const App: React.FC = () => {
                             className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300"
                           >
                             <Icons.Languages size={14} />
-                            <span className="text-xs font-bold">翻译成中文</span>
+                            <span className="text-xs font-bold">{t('studio.translateToCN')}</span>
                           </button>
                           <button
                             onClick={() => {
@@ -1463,7 +1467,7 @@ const App: React.FC = () => {
                             className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300"
                           >
                             <Icons.Languages size={14} />
-                            <span className="text-xs font-bold">翻译成英文</span>
+                            <span className="text-xs font-bold">{t('studio.translateToEN')}</span>
                           </button>
                           <div className="h-px bg-stone-800 my-1 mx-2" />
                           {state.image && (
@@ -1517,7 +1521,7 @@ const App: React.FC = () => {
                         if (state.image) {
                           handleStartPipeline();
                         } else {
-                          showToast('请先上传图片', 'error');
+                          showToast(t('toast.pleaseUploadImage'), 'error');
                         }
                       } else {
                         handleRegenerateAgent(AgentRole.SYNTHESIZER);
@@ -1569,23 +1573,23 @@ const App: React.FC = () => {
                   )}
                 </div>
               </div>
-               <button
-                 onClick={() => { navigator.clipboard.writeText(state.editablePrompt); showToast(t('toast.copied'), 'success'); }}
-                 disabled={!state.editablePrompt}
-                 className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 transition-all flex-shrink-0"
-                 title={t('studio.copy')}
-               >
-                 <Icons.Copy size={14} />
-                 {t('studio.copy')}
-               </button>
-               <button
-                 onClick={() => setIsChatDrawerOpen(!isChatDrawerOpen)}
-                 className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all flex-shrink-0 ${isChatDrawerOpen ? 'bg-amber-900/30 text-amber-400' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
-                 title={t('studio.chat')}
-               >
-                 <Icons.MessageSquare size={14} />
-                 {t('studio.chat')}
-               </button>
+              <button
+                onClick={() => { navigator.clipboard.writeText(state.editablePrompt); showToast(t('toast.copied'), 'success'); }}
+                disabled={!state.editablePrompt}
+                className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 transition-all flex-shrink-0"
+                title={t('studio.copy')}
+              >
+                <Icons.Copy size={14} />
+                {t('studio.copy')}
+              </button>
+              <button
+                onClick={() => setIsChatDrawerOpen(!isChatDrawerOpen)}
+                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all flex-shrink-0 ${isChatDrawerOpen ? 'bg-amber-900/30 text-amber-400' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
+                title={t('studio.chat')}
+              >
+                <Icons.MessageSquare size={14} />
+                {t('studio.chat')}
+              </button>
             </div>
 
             {/* AI Input Area - Two Row Layout */}
@@ -1682,6 +1686,17 @@ const App: React.FC = () => {
 
                   {/* Model Info */}
                   <span className="text-[10px] text-stone-500 font-medium">{activeModelName}</span>
+
+                  {/* Aspect Ratio Selector */}
+                  <AspectRatioSelector
+                    selectedRatio={selectedAspectRatio}
+                    is4K={is4K}
+                    onRatioChange={setSelectedAspectRatio}
+                    on4KChange={setIs4K}
+                    disabled={state.isGeneratingImage}
+                    apiMode={apiMode}
+                    language={language}
+                  />
                 </div>
 
                 {/* Right: Action Buttons */}
@@ -1967,7 +1982,7 @@ const App: React.FC = () => {
 
               const file = files[0];
               if (file.size > 20 * 1024 * 1024) {
-                showToast('文件过大 (最大 20MB)', 'error');
+                showToast(t('toast.fileTooLarge'), 'error');
                 return;
               }
 
@@ -1996,12 +2011,12 @@ const App: React.FC = () => {
                       Math.abs(curr.value - ratio) < Math.abs(prev.value - ratio) ? curr : prev
                     );
                     handleFileSelected(cleanBase64, closest.id, mimeType, undefined, extracted || undefined);
-                    showToast('已加载新图片', 'success');
+                    showToast(t('toast.newImageLoaded'), 'success');
                   };
                   img.src = base64String;
                 } else {
                   handleFileSelected(cleanBase64, '16:9', mimeType);
-                  showToast('已加载新视频', 'success');
+                  showToast(t('toast.newVideoLoaded'), 'success');
                 }
               };
               reader.readAsDataURL(file);
@@ -2112,7 +2127,7 @@ const App: React.FC = () => {
             {!state.image && activeTab !== 'STUDIO' ? (
               <div className="h-full flex flex-col items-center justify-center text-stone-700 space-y-4">
                 <Icons.Compass size={48} strokeWidth={1} className="animate-spin duration-10000 opacity-20" />
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-50">请先上传图片以使用分析功能</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-50">{t('chat.uploadImageFirst')}</p>
               </div>
             ) : renderTabContent()}
           </div>

@@ -2,22 +2,13 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Icons } from './Icons';
 
+import { ChatMessage, SkillType } from '../types';
+
 // Skill types that AI can invoke
-export type SkillType = 'quality-check' | 'reverse' | 'translate' | 'refine' | 'generate';
+// Imported from types.ts
 
 // Chat message structure
-export interface ChatMessage {
-    id: string;
-    role: 'user' | 'assistant' | 'skill-result';
-    content: string;
-    timestamp: number;
-    isStreaming?: boolean;
-    // Skill result specific
-    skillType?: SkillType;
-    suggestions?: string[];
-    selectedIndices?: number[];
-    applied?: boolean;
-}
+// Imported from types.ts
 
 interface ChatPanelProps {
     messages: ChatMessage[];

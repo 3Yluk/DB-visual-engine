@@ -96,6 +96,9 @@ export interface AppState {
 
 export type AgentPromptGenerator = (previousContext: string) => string;
 
+// Image generation quality options
+export type ImageQuality = 'standard' | '4k';
+
 // Chat/Skill System Types
 export type SkillType = 'quality-check' | 'reverse' | 'translate' | 'refine' | 'generate';
 

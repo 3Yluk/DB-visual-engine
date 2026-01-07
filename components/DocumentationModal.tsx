@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Icons } from './Icons';
+import { useI18n } from '../hooks/useI18n';
 import ReactMarkdown from 'react-markdown';
 import { DOCUMENTATION_CATEGORIES, DocArticle } from '../services/documentationData';
 
@@ -16,6 +17,7 @@ interface DocumentationModalProps {
 }
 
 export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, onClose }) => {
+  const { t } = useI18n();
   const [activeArticleId, setActiveArticleId] = useState<string>('changelog');
 
   // Reset to changelog when opened
@@ -72,9 +74,9 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, 
               <div className="p-2 bg-orange-500/10 rounded-xl border border-orange-500/20">
                 <Icons.Help size={20} className="text-orange-500" />
               </div>
-              文档中心
+              {t('docs.title')}
             </h3>
-            <p className="text-[11px] text-stone-500 font-medium tracking-wider uppercase mt-2 ml-1">Documentation Center</p>
+            <p className="text-[11px] text-stone-500 font-medium tracking-wider uppercase mt-2 ml-1">{t('docs.subtitle')}</p>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar">
@@ -95,7 +97,7 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({ isOpen, 
 
           <div className="p-6 border-t border-stone-800 bg-stone-900/30">
             <div className="flex items-center justify-between text-[10px] text-stone-500">
-              <span className="font-mono">v2.6.0</span>
+              <span className="font-mono">{t('docs.version')}</span>
               <span className="px-2 py-0.5 rounded-full bg-stone-800 border border-stone-700 text-stone-400">Enterprise</span>
             </div>
           </div>
