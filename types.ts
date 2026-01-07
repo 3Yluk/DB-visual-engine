@@ -34,6 +34,7 @@ export interface ReferenceImage {
 
 export interface HistoryItem {
   id: string;
+  groupId?: string; // New field for grouping related generations
   prompt: string;
   timestamp: number;
   originalImage: string; // base64
@@ -61,6 +62,8 @@ export interface AppState {
   history: HistoryItem[];
   promptHistory: string[];
   selectedHistoryIndex: number | null;
+  currentGroupId: string;
+
 
   // Missing properties added to fix lint errors
   isGeneratingImage: boolean;

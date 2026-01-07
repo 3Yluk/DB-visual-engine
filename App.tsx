@@ -57,6 +57,7 @@ import { ImageZoomState } from './utils/zoom';
 
 const INITIAL_STATE: AppState = {
   image: null, mimeType: '', isProcessing: false, activeRole: null, results: INITIAL_RESULTS,
+  currentGroupId: crypto.randomUUID(), // Start new group session
   generatedImage: null, generatedImages: [], isGeneratingImage: false,
   editablePrompt: '', promptHistory: [], currentPromptIndex: 0, isRefiningPrompt: false,
   useReferenceImage: false, isTemplatizing: false, detectedAspectRatio: "1:1",
@@ -65,6 +66,9 @@ const INITIAL_STATE: AppState = {
   layoutData: null, isAnalyzingLayout: false,
   suggestions: [], selectedSuggestionIndices: [],
   promptCache: { CN: '', EN: '' },
+
+  // Global History
+  generatedImages: [],
   selectedHistoryIndex: 0,
   referenceImages: [],
   isComparing: false,
@@ -561,7 +565,8 @@ const App: React.FC = () => {
       history: prev.history,
       generatedImages: prev.generatedImages,
       generatedImage: null,
-      selectedHistoryIndex: -1
+      selectedHistoryIndex: -1,
+      currentGroupId: crypto.randomUUID()
     }));
     clearCurrentTask(); // Clear cache when starting new task
   };
@@ -943,6 +948,7 @@ const App: React.FC = () => {
 
             const newItem: HistoryItem = {
               id: (Date.now() + i).toString(),
+              groupId: state.currentGroupId,
               timestamp: Date.now() + i,
               originalImage: state.image!,
               mimeType: state.mimeType,
@@ -1954,7 +1960,7 @@ const App: React.FC = () => {
       )}
 
       <nav className="fixed top-0 left-0 right-0 z-50 bg-stone-950/90 backdrop-blur-md border-b border-stone-800 h-16 flex items-center justify-between px-10">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowLanding(true)}>
+        <div className="flex items-center gap-3">
           <span className="font-serif font-bold text-xl tracking-tight text-stone-200">UnImage <span className="text-orange-500 text-sm align-top">PRO</span></span>
         </div>
 
@@ -1972,10 +1978,15 @@ const App: React.FC = () => {
               const newLang = language === 'CN' ? 'EN' : 'CN';
               setLanguage(newLang);
             }}
-            className="p-2.5 rounded-full hover:bg-stone-800 text-stone-400 hover:text-orange-500 transition-all"
+            className="p-2.5 rounded-full hover:bg-stone-800 text-stone-400 hover:text-orange-500 transition-all group"
             title={language === 'CN' ? 'Switch Language' : '切换语言'}
           >
-            <Icons.Globe size={20} />
+            <div className="relative">
+              <Icons.Languages size={20} />
+              <span className="absolute -top-1.5 -right-1.5 bg-orange-500 text-white text-[7px] font-black px-0.5 rounded-[2px] uppercase leading-none border border-stone-950 group-hover:bg-orange-600 transition-colors">
+                {language}
+              </span>
+            </div>
           </button>
           <button onClick={() => setIsGalleryOpen(true)} className="p-2.5 rounded-full hover:bg-stone-800 text-stone-400 hover:text-violet-500 transition-all" title="相册"><Icons.LayoutGrid size={20} /></button>
           <button onClick={() => setIsHelpOpen(true)} className="p-2.5 rounded-full hover:bg-stone-800 text-stone-400 hover:text-orange-500 transition-all" title="帮助文档"><Icons.Help size={20} /></button>
