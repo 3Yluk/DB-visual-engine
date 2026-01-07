@@ -15,7 +15,6 @@ interface GalleryModalProps {
     images: string[]; // Thumbnails for grid
     history: HistoryItem[]; // Full history for fetching originals
     prompts?: string[];
-    onSelectImage?: (index: number) => void;
     onDownload?: (index: number) => void;
     onEdit?: (index: number) => void;
 }
@@ -32,7 +31,7 @@ interface JustifiedRow {
 }
 
 // ============================================================================
-//  GalleryModal - 全屏相册浏览器
+//  GalleryModal - 全屏相册浏览器 (Eagle-style Selection)
 // ============================================================================
 export const GalleryModal: React.FC<GalleryModalProps> = ({
     isOpen,
@@ -40,20 +39,24 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
     images,
     history,
     prompts = [],
-    onSelectImage,
     onDownload,
     onEdit
 }) => {
-    const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+    const [focusedIndex, setFocusedIndex] = useState<number>(0); // Grid 焦点
+    const [selectedIndex, setSelectedIndex] = useState<number | null>(null); // 大图模式
     const [fullImage, setFullImage] = useState<string | null>(null);
     const [imageDimensions, setImageDimensions] = useState<Map<number, ImageDimensions>>(new Map());
     const [containerWidth, setContainerWidth] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
-    // 用于追踪 images 版本，防止 race condition
     const imagesVersionRef = useRef(0);
 
-    const TARGET_ROW_HEIGHT = 200; // Target height for rows
-    const GAP = 4; // Gap between images in pixels
+    // Refs for stable keyboard handlers (避免频繁重新注册 listener)
+    const focusedIndexRef = useRef(focusedIndex);
+    const justifiedRowsRef = useRef<JustifiedRow[]>([]);
+    const navigationMapRef = useRef<{ rowIndex: number; colIndex: number; centerX: number }[]>([]);
+
+    const TARGET_ROW_HEIGHT = 200;
+    const GAP = 8;
 
     // Helper to format image src
     const formatSrc = useCallback((img: string) => {
@@ -61,11 +64,18 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
         return `data:image/jpeg;base64,${img}`;
     }, []);
 
+    // Reset focus when gallery opens
+    useEffect(() => {
+        if (isOpen) {
+            setFocusedIndex(0);
+            setSelectedIndex(null);
+        }
+    }, [isOpen]);
+
     // Load image dimensions with race condition protection
     useEffect(() => {
         if (!isOpen || images.length === 0) return;
 
-        // 增加版本号，用于检测过期的异步操作
         imagesVersionRef.current += 1;
         const currentVersion = imagesVersionRef.current;
 
@@ -84,7 +94,6 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
                         resolve();
                     };
                     imgEl.onerror = () => {
-                        // Default to 1:1 aspect ratio if loading fails
                         newDimensions.set(idx, { width: 512, height: 512, aspectRatio: 1 });
                         resolve();
                     };
@@ -92,7 +101,6 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
                 });
             }));
 
-            // 只有版本号匹配时才更新状态，防止 race condition
             if (currentVersion === imagesVersionRef.current) {
                 setImageDimensions(newDimensions);
             }
@@ -101,7 +109,7 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
         loadDimensions();
     }, [isOpen, images, formatSrc]);
 
-    // Track container width - 需要在 Grid 模式重新挂载时重新观察
+    // Track container width
     const isGridMode = selectedIndex === null;
     useEffect(() => {
         if (!containerRef.current || !isOpen || !isGridMode) return;
@@ -115,6 +123,16 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
         observer.observe(containerRef.current);
         return () => observer.disconnect();
     }, [isOpen, isGridMode]);
+
+    // 返回 Grid 模式时，滚动到当前焦点图片确保可见
+    useEffect(() => {
+        if (isGridMode) {
+            requestAnimationFrame(() => {
+                const element = document.getElementById(`gallery-item-${focusedIndex}`);
+                element?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+            });
+        }
+    }, [isGridMode, focusedIndex]);
 
     // Calculate justified layout rows
     const justifiedRows = useMemo<JustifiedRow[]>(() => {
@@ -133,19 +151,16 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
             currentRow.push({ index: i, aspectRatio });
             currentRowAspectSum += aspectRatio;
 
-            // Calculate what the row height would be if we finalize this row
             const gapsWidth = (currentRow.length - 1) * GAP;
             const rowHeight = (availableWidth - gapsWidth) / currentRowAspectSum;
 
-            // If row height is less than target, finalize this row
             if (rowHeight <= TARGET_ROW_HEIGHT) {
-                const finalHeight = rowHeight;
                 rows.push({
-                    height: finalHeight,
+                    height: rowHeight,
                     images: currentRow.map(item => ({
                         index: item.index,
-                        width: finalHeight * item.aspectRatio,
-                        height: finalHeight
+                        width: rowHeight * item.aspectRatio,
+                        height: rowHeight
                     }))
                 });
                 currentRow = [];
@@ -153,9 +168,7 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
             }
         }
 
-        // Handle remaining images in the last row
         if (currentRow.length > 0) {
-            // For the last row, use target height (don't stretch)
             const finalHeight = Math.min(TARGET_ROW_HEIGHT, (availableWidth - (currentRow.length - 1) * GAP) / currentRowAspectSum);
             rows.push({
                 height: finalHeight,
@@ -170,6 +183,25 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
         return rows;
     }, [containerWidth, imageDimensions, images.length]);
 
+    // Build navigation map: for each image, find its row and X position
+    const navigationMap = useMemo(() => {
+        const map: { rowIndex: number; colIndex: number; centerX: number }[] = [];
+        justifiedRows.forEach((row, rowIndex) => {
+            let xOffset = 0;
+            row.images.forEach((item, colIndex) => {
+                const centerX = xOffset + item.width / 2;
+                map[item.index] = { rowIndex, colIndex, centerX };
+                xOffset += item.width + GAP;
+            });
+        });
+        return map;
+    }, [justifiedRows, GAP]);
+
+    // Keep refs in sync with state
+    useEffect(() => { focusedIndexRef.current = focusedIndex; }, [focusedIndex]);
+    useEffect(() => { justifiedRowsRef.current = justifiedRows; }, [justifiedRows]);
+    useEffect(() => { navigationMapRef.current = navigationMap; }, [navigationMap]);
+
     // Set full image when selectedIndex changes
     useEffect(() => {
         if (selectedIndex === null) {
@@ -183,45 +215,177 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
         }
     }, [selectedIndex, history]);
 
-    // Keyboard Navigation for Full Scale View (大图模式专用)
+    // Keyboard Navigation for Full View (大图模式)
     useEffect(() => {
         if (selectedIndex === null) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
+            const rows = justifiedRowsRef.current;
+            const navMap = navigationMapRef.current;
+            const currentPos = navMap[selectedIndex];
+
             if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                e.stopImmediatePropagation(); // 阻止 App.tsx 的 History 切换
-                setSelectedIndex(prev => prev !== null && prev > 0 ? prev - 1 : prev);
+                e.stopImmediatePropagation();
+                const newIndex = Math.max(0, selectedIndex - 1);
+                setSelectedIndex(newIndex);
+                setFocusedIndex(newIndex);
             } else if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                e.stopImmediatePropagation(); // 阻止 App.tsx 的 History 切换
-                setSelectedIndex(prev => prev !== null && prev < images.length - 1 ? prev + 1 : prev);
-            } else if (e.key === 'Escape') {
+                e.stopImmediatePropagation();
+                const newIndex = Math.min(images.length - 1, selectedIndex + 1);
+                setSelectedIndex(newIndex);
+                setFocusedIndex(newIndex);
+            } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
-                e.stopImmediatePropagation(); // 阻止 App.tsx 的 ESC 处理器
+                e.stopImmediatePropagation();
+                if (currentPos && currentPos.rowIndex > 0) {
+                    const prevRow = rows[currentPos.rowIndex - 1];
+                    let closestIndex = prevRow.images[0].index;
+                    let minDistance = Infinity;
+                    let xOffset = 0;
+                    for (const img of prevRow.images) {
+                        const imgCenterX = xOffset + img.width / 2;
+                        const distance = Math.abs(imgCenterX - currentPos.centerX);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestIndex = img.index;
+                        }
+                        xOffset += img.width + 8;
+                    }
+                    setSelectedIndex(closestIndex);
+                    setFocusedIndex(closestIndex);
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                if (currentPos && currentPos.rowIndex < rows.length - 1) {
+                    const nextRow = rows[currentPos.rowIndex + 1];
+                    let closestIndex = nextRow.images[0].index;
+                    let minDistance = Infinity;
+                    let xOffset = 0;
+                    for (const img of nextRow.images) {
+                        const imgCenterX = xOffset + img.width / 2;
+                        const distance = Math.abs(imgCenterX - currentPos.centerX);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestIndex = img.index;
+                        }
+                        xOffset += img.width + 8;
+                    }
+                    setSelectedIndex(closestIndex);
+                    setFocusedIndex(closestIndex);
+                }
+            } else if (e.key === 'Escape' || e.key === ' ') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
                 setSelectedIndex(null);
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keydown', handleKeyDown, { capture: true });
+        return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
     }, [selectedIndex, images.length]);
 
-    // Keyboard handler for Grid View (Grid 模式 ESC 关闭)
+    // Keyboard Navigation for Grid View (Grid 模式 - Eagle style)
+    // 使用 refs 读取最新值，避免频繁重新注册 listener
     useEffect(() => {
         if (!isOpen || selectedIndex !== null) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
+            const currentFocused = focusedIndexRef.current;
+            const rows = justifiedRowsRef.current;
+            const navMap = navigationMapRef.current;
+
             if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 onClose();
+                return;
+            }
+
+            if (e.key === ' ') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                setSelectedIndex(currentFocused);
+                return;
+            }
+
+            if (rows.length === 0) return;
+
+            const currentPos = navMap[currentFocused];
+            if (!currentPos) return;
+
+            let newFocusedIndex = currentFocused;
+
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                newFocusedIndex = Math.max(0, currentFocused - 1);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                // 获取总图片数
+                const totalImages = rows.reduce((sum, row) => sum + row.images.length, 0);
+                newFocusedIndex = Math.min(totalImages - 1, currentFocused + 1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                const { rowIndex, centerX } = currentPos;
+                if (rowIndex > 0) {
+                    const prevRow = rows[rowIndex - 1];
+                    // 找到上一行中 centerX 最接近的图片
+                    let closestIndex = prevRow.images[0].index;
+                    let minDistance = Infinity;
+                    let xOffset = 0;
+                    for (const img of prevRow.images) {
+                        const imgCenterX = xOffset + img.width / 2;
+                        const distance = Math.abs(imgCenterX - centerX);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestIndex = img.index;
+                        }
+                        xOffset += img.width + 8; // GAP
+                    }
+                    newFocusedIndex = closestIndex;
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                const { rowIndex, centerX } = currentPos;
+                if (rowIndex < rows.length - 1) {
+                    const nextRow = rows[rowIndex + 1];
+                    // 找到下一行中 centerX 最接近的图片
+                    let closestIndex = nextRow.images[0].index;
+                    let minDistance = Infinity;
+                    let xOffset = 0;
+                    for (const img of nextRow.images) {
+                        const imgCenterX = xOffset + img.width / 2;
+                        const distance = Math.abs(imgCenterX - centerX);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestIndex = img.index;
+                        }
+                        xOffset += img.width + 8; // GAP
+                    }
+                    newFocusedIndex = closestIndex;
+                }
+            }
+
+            if (newFocusedIndex !== currentFocused) {
+                setFocusedIndex(newFocusedIndex);
+                // 滚动到焦点元素，确保其可见
+                requestAnimationFrame(() => {
+                    const element = document.getElementById(`gallery-item-${newFocusedIndex}`);
+                    element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                });
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, selectedIndex, onClose]);
+        // 使用 capture: true 在捕获阶段拦截事件，确保优先于 App.tsx 处理
+        window.addEventListener('keydown', handleKeyDown, { capture: true });
+        return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+    }, [isOpen, selectedIndex, onClose]); // 依赖大幅减少，listener 更稳定
 
     if (!isOpen) return null;
 
@@ -229,11 +393,15 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
     if (selectedIndex !== null) {
         const handlePrev = (e?: React.MouseEvent) => {
             e?.stopPropagation();
-            setSelectedIndex(prev => prev !== null && prev > 0 ? prev - 1 : prev);
+            const newIndex = Math.max(0, selectedIndex - 1);
+            setSelectedIndex(newIndex);
+            setFocusedIndex(newIndex);
         };
         const handleNext = (e?: React.MouseEvent) => {
             e?.stopPropagation();
-            setSelectedIndex(prev => prev !== null && prev < images.length - 1 ? prev + 1 : prev);
+            const newIndex = Math.min(images.length - 1, selectedIndex + 1);
+            setSelectedIndex(newIndex);
+            setFocusedIndex(newIndex);
         };
 
         const displayImage = fullImage || images[selectedIndex];
@@ -341,28 +509,27 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
         );
     }
 
-    // 相册 Grid 模式 - Justified Layout
+    // 相册 Grid 模式 - Justified Layout with Eagle-style Selection
     return (
         <div
             className="fixed inset-0 z-[300] bg-zinc-950 animate-in fade-in duration-300 flex flex-col"
             onClick={onClose}
         >
-            {/* Header */}
-            <div className="flex items-center justify-between px-8 py-5 border-b border-stone-900 bg-zinc-950" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-stone-900 rounded-xl">
-                        <Icons.LayoutGrid size={20} className="text-stone-200" />
+            {/* Header - 紧凑单行 */}
+            <div className="flex items-center justify-between px-6 py-3 border-b border-stone-900 bg-zinc-950" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <Icons.LayoutGrid size={18} className="text-stone-400" />
+                        <span className="text-sm font-medium text-stone-200">相册</span>
+                        <span className="text-xs text-stone-500">({images.length})</span>
                     </div>
-                    <div>
-                        <h2 className="text-lg font-bold text-stone-200">相册</h2>
-                        <p className="text-[10px] text-stone-500 font-medium uppercase tracking-wider">All Generations · {images.length}</p>
-                    </div>
+                    <span className="text-[10px] text-stone-600 font-mono">← → ↑ ↓ 选择 · 空格 打开 · ESC 关闭</span>
                 </div>
                 <button
                     onClick={onClose}
-                    className="p-3 rounded-full hover:bg-stone-900 text-stone-500 hover:text-stone-200 transition-all"
+                    className="p-2 rounded-full hover:bg-stone-900 text-stone-500 hover:text-stone-200 transition-all"
                 >
-                    <Icons.X size={24} />
+                    <Icons.X size={20} />
                 </button>
             </div>
 
@@ -390,43 +557,49 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
                                 className="flex"
                                 style={{ gap: `${GAP}px`, height: `${row.height}px` }}
                             >
-                                {row.images.map((item) => (
-                                    <div
-                                        key={item.index}
-                                        onClick={() => setSelectedIndex(item.index)}
-                                        className="relative group cursor-pointer overflow-hidden rounded-sm bg-stone-900 flex-shrink-0"
-                                        style={{ width: `${item.width}px`, height: `${item.height}px` }}
-                                    >
-                                        <img
-                                            src={formatSrc(images[item.index])}
-                                            alt={`Generated ${item.index + 1}`}
-                                            className="w-full h-full object-cover transition-transform duration-300 will-change-transform group-hover:scale-105"
-                                            loading="lazy"
-                                        />
+                                {row.images.map((item) => {
+                                    const isFocused = item.index === focusedIndex;
+                                    return (
+                                        <div
+                                            id={`gallery-item-${item.index}`}
+                                            key={item.index}
+                                            onClick={() => {
+                                                setFocusedIndex(item.index);
+                                                setSelectedIndex(item.index);
+                                            }}
+                                            className={`relative group cursor-pointer overflow-hidden rounded-sm bg-stone-900 flex-shrink-0 transition-all duration-150 ${isFocused
+                                                ? 'ring-[3px] ring-amber-400 ring-offset-1 ring-offset-black shadow-[0_0_12px_rgba(251,191,36,0.6)]'
+                                                : ''
+                                                }`}
+                                            style={{ width: `${item.width}px`, height: `${item.height}px` }}
+                                        >
+                                            <img
+                                                src={formatSrc(images[item.index])}
+                                                alt={`Generated ${item.index + 1}`}
+                                                className="w-full h-full object-cover transition-transform duration-300 will-change-transform group-hover:scale-105"
+                                                loading="lazy"
+                                            />
 
-                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 pointer-events-none" />
+                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 pointer-events-none" />
 
-                                        {onEdit && (
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onEdit(item.index); }}
-                                                className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-black/80 text-white/70 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-md shadow-lg"
-                                                title="编辑"
-                                            >
-                                                <Icons.Edit2 size={14} strokeWidth={2} />
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
+                                            {onEdit && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onEdit(item.index); }}
+                                                    className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-black/80 text-white/70 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-md shadow-lg"
+                                                    title="编辑"
+                                                >
+                                                    <Icons.Edit2 size={14} strokeWidth={2} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            {/* Footer */}
-            <div className="px-8 py-4 border-t border-stone-900 bg-zinc-950 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
-                <span className="text-[10px] text-stone-600 font-mono tracking-wider">ESC 关闭 · ← → 切换</span>
-            </div>
         </div>
     );
 };
