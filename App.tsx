@@ -537,8 +537,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleToggleLanguage = async () => {
-    const target = currentLang === 'CN' ? 'EN' : 'CN';
+  const handleTranslatePrompt = async (target: 'CN' | 'EN') => {
     if (state.promptCache[target]) {
       setState(prev => ({ ...prev, editablePrompt: prev.promptCache[target] }));
       setCurrentLang(target);
@@ -1171,7 +1170,7 @@ const App: React.FC = () => {
         handleGenerateImage();
       } else if (skillType === 'translate') {
         setChatMessages(prev => [...prev, createAssistantMessage('正在翻译...')]);
-        handleToggleLanguage();
+        handleTranslatePrompt(currentLang === 'CN' ? 'EN' : 'CN');
       } else {
         setChatMessages(prev => [...prev, createAssistantMessage('我可以帮你：\n- 质检分析\n- 修改提示词\n- 翻译\n- 生成图片\n\n请告诉我你想要做什么？')]);
       }
@@ -1317,9 +1316,6 @@ const App: React.FC = () => {
                     )}
                   </div>
                 )}
-                <button onClick={handleToggleLanguage} className="p-1.5 bg-stone-800 hover:bg-stone-700 text-stone-400 rounded-lg transition-colors" title="翻译">
-                  <Icons.Languages size={12} />
-                </button>
               </div>
             </div>
           </div>
@@ -1448,6 +1444,27 @@ const App: React.FC = () => {
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setIsMentionMenuOpen(false)} />
                         <div className="absolute bottom-full left-0 mb-1 bg-stone-900 border border-stone-700 rounded-lg shadow-xl z-50 overflow-hidden min-w-[120px]">
+                          <button
+                            onClick={() => {
+                              handleTranslatePrompt('CN');
+                              setIsMentionMenuOpen(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300"
+                          >
+                            <Icons.Languages size={14} />
+                            <span className="text-xs font-bold">翻译成中文</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleTranslatePrompt('EN');
+                              setIsMentionMenuOpen(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-stone-800 flex items-center gap-2 transition-colors text-stone-300"
+                          >
+                            <Icons.Languages size={14} />
+                            <span className="text-xs font-bold">翻译成英文</span>
+                          </button>
+                          <div className="h-px bg-stone-800 my-1 mx-2" />
                           {state.image && (
                             <button
                               onClick={() => {
