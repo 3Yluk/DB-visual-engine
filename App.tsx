@@ -121,9 +121,16 @@ const App: React.FC = () => {
       const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
       setApiMode(storedMode);
 
-      // Load specific model name for display (prefer 'fast' model as it's used for chat)
-      const storedFastModel = localStorage.getItem('berryxia_model_fast');
-      if (storedFastModel) setActiveModelName(storedFastModel);
+      // Load specific model name for display based on mode
+      if (storedMode === 'volcengine') {
+        // For Volcengine, show the vision model (used for reverse engineering)
+        const storedVisionModel = localStorage.getItem('berryxia_model_vision') || 'seed-1-6-250915';
+        setActiveModelName(storedVisionModel);
+      } else {
+        // For Google modes, show the fast model (used for chat)
+        const storedFastModel = localStorage.getItem('berryxia_model_fast');
+        if (storedFastModel) setActiveModelName(storedFastModel);
+      }
 
       // Check for environment variable injection
       const envKey = process.env.API_KEY || process.env.GEMINI_API_KEY;

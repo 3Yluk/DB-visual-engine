@@ -36,6 +36,18 @@ const OFFICIAL_RATIO_OPTIONS: RatioOption[] = [
   { id: '16:9', label: '宽屏', labelEn: 'Wide', width: 26, height: 14 },
 ];
 
+// Volcengine mode: 8 ratios (Seedream 4.5 supported)
+const VOLCENGINE_RATIO_OPTIONS: RatioOption[] = [
+  { id: '1:1', label: '正方', labelEn: 'Square', width: 20, height: 20 },
+  { id: '3:4', label: '竖屏', labelEn: 'Portrait', width: 18, height: 24 },
+  { id: '4:3', label: '横屏', labelEn: 'Landscape', width: 24, height: 18 },
+  { id: '9:16', label: '长竖', labelEn: 'Tall', width: 14, height: 26 },
+  { id: '16:9', label: '宽屏', labelEn: 'Wide', width: 26, height: 14 },
+  { id: '2:3', label: '照片竖', labelEn: 'Photo V', width: 16, height: 24 },
+  { id: '3:2', label: '照片横', labelEn: 'Photo H', width: 24, height: 16 },
+  { id: '21:9', label: '影院', labelEn: 'Cinema', width: 28, height: 12 },
+];
+
 // i18n text
 const TEXT = {
   CN: {
@@ -72,7 +84,11 @@ export const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const ratioOptions = apiMode === 'official' ? OFFICIAL_RATIO_OPTIONS : CUSTOM_RATIO_OPTIONS;
+  const ratioOptions = apiMode === 'official'
+    ? OFFICIAL_RATIO_OPTIONS
+    : apiMode === 'volcengine'
+      ? VOLCENGINE_RATIO_OPTIONS
+      : CUSTOM_RATIO_OPTIONS;
   const t = TEXT[language];
 
   // Update menu position when opening

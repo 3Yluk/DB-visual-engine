@@ -117,29 +117,31 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     setStatus('idle');
     try {
       if (apiMode === 'volcengine') {
-        // Lightweight auth check for Volcengine
-        // We make a request with empty/invalid body. If we get 400 (Bad Request), Auth is likely OK.
-        // If we get 401/403, Auth is bad.
-        const response = await fetch("https://ark.ap-southeast.bytepluses.com/api/v3/images/generations", {
+        // Use a real model for auth check via chat completions
+        // A simple ping request to verify the API key is valid
+        const response = await fetch("/api/volcengine-chat", {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${currentKey}`
           },
-          body: JSON.stringify({ model: 'check', prompt: '' })
+          body: JSON.stringify({
+            model: 'seed-1-6-250915',
+            messages: [{ role: 'user', content: 'ping' }],
+            max_tokens: 1
+          })
         });
 
         if (response.status === 401 || response.status === 403) {
-          throw new Error(`Authentication Failed (${response.status})`);
+          throw new Error(`认证失败 (${response.status})`);
         }
-        // 400 is expected for invalid body, which means we reached the server and passed Auth
-        // 200 is unexpected but also good
         if (response.status >= 500) {
-          throw new Error(`Server Error (${response.status})`);
+          throw new Error(`服务器错误 (${response.status})`);
         }
 
+        // If we get here, auth is OK
         setStatus('success');
-        setStatusMsg("连接成功！(Auth Verified)");
+        setStatusMsg("连接成功！");
       } else {
         let client: GoogleGenAI;
 

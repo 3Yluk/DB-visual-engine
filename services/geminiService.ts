@@ -564,10 +564,15 @@ export async function generateImageFromPrompt(
     };
 
     const finalRatioStr = parseAspectRatioFromPrompt(promptContext);
+    // Volcengine size mappings: all maintain >3.6M pixels (2K resolution minimum)
     if (finalRatioStr === '16:9') { width = 2560; height = 1440; }
     else if (finalRatioStr === '9:16') { width = 1440; height = 2560; }
     else if (finalRatioStr === '4:3') { width = 2304; height = 1728; }
     else if (finalRatioStr === '3:4') { width = 1728; height = 2304; }
+    else if (finalRatioStr === '2:3') { width = 1536; height = 2304; }
+    else if (finalRatioStr === '3:2') { width = 2304; height = 1536; }
+    else if (finalRatioStr === '21:9') { width = 2688; height = 1152; }
+    // 1:1 uses default 2048x2048
 
     // Format reference image for Volcengine API
     const formatImageForVolcengine = (imageData: string, imgMimeType: string): string => {
@@ -591,6 +596,13 @@ export async function generateImageFromPrompt(
       console.log(`[Volcengine] Including 1 reference image for I2I generation`);
     }
 
+    // Apply 4K scaling if enabled (roughly 2x resolution)
+    if (is4K) {
+      width = Math.round(width * 1.5); // Scale up for 4K quality
+      height = Math.round(height * 1.5);
+      console.log(`[Volcengine] 4K mode enabled: ${width}x${height}`);
+    }
+
     try {
       // Build request body
       const requestBody: Record<string, any> = {
@@ -601,7 +613,9 @@ export async function generateImageFromPrompt(
         response_format: "b64_json",
         sequential_image_generation: "disabled",
         stream: false,
-        watermark: false
+        watermark: false,
+        // Volcengine quality parameter: "Basic" (2K) or "High" (4K)
+        quality: is4K ? "High" : "Basic"
       };
 
       // Add reference images if present (I2I / Mixed mode)
