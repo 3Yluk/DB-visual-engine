@@ -400,9 +400,11 @@ const App: React.FC = () => {
     setImageZoom({ scale: 1, panX: 0, panY: 0 });
   }, [displayImage, state.generatedImage]);
 
-  // Auto-save current task to cache whenever relevant state changes
+  // Auto-save current task to cache with debounce (避免频繁保存)
   useEffect(() => {
-    if (state.image) {
+    if (!state.image) return;
+
+    const timeoutId = setTimeout(() => {
       try {
         saveCurrentTask({
           image: state.image,
@@ -424,8 +426,14 @@ const App: React.FC = () => {
           showToast(t('toast.storageFull'), 'error');
         }
       }
-    }
-  }, [state, displayImage]);
+    }, 500); // 500ms 防抖
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    state.image, state.mimeType, state.detectedAspectRatio,
+    state.editablePrompt, state.generatedImage, state.generatedImages.length,
+    state.selectedHistoryIndex, displayImage
+  ]);
 
   // Helper to load history item
   const loadHistoryItem = (index: number) => {
