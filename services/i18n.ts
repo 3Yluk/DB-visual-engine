@@ -126,7 +126,10 @@ export type I18nKey =
   | 'refine.optimizePromptOnly'
   | 'gallery.addToComparison'
   | 'gallery.addedToComparisonLeft'
-  | 'toast.imageAddedToReference';
+  | 'toast.imageAddedToReference'
+  | 'comparison.original'
+  | 'comparison.selected'
+  | 'comparison.generated';
 
 export const translations: Record<Language, Record<I18nKey, string>> = {
   CN: {
@@ -255,7 +258,10 @@ export const translations: Record<Language, Record<I18nKey, string>> = {
     'refine.optimizePromptOnly': '仅优化提示词',
     'gallery.addToComparison': '添加到对比模式',
     'gallery.addedToComparisonLeft': '已添加到对比模式 (左侧)',
-    'toast.imageAddedToReference': '已添加图片到参考区域'
+    'toast.imageAddedToReference': '已添加图片到参考区域',
+    'comparison.original': '原图',
+    'comparison.selected': '自选',
+    'comparison.generated': '生成'
   },
 
   EN: {
@@ -384,7 +390,10 @@ export const translations: Record<Language, Record<I18nKey, string>> = {
     'refine.optimizePromptOnly': 'Refine Prompt Only',
     'gallery.addToComparison': 'Add to Comparison',
     'gallery.addedToComparisonLeft': 'Added to Comparison (Left)',
-    'toast.imageAddedToReference': 'Image added to reference area'
+    'toast.imageAddedToReference': 'Image added to reference area',
+    'comparison.original': 'ORIGINAL',
+    'comparison.selected': 'SELECTED',
+    'comparison.generated': 'GENERATED'
   }
 };
 

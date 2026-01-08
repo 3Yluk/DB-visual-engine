@@ -10,16 +10,21 @@ interface ApiKeyModalProps {
 }
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => {
-  const [apiMode, setApiMode] = useState<'official' | 'custom'>('custom');
+  const [apiMode, setApiMode] = useState<'official' | 'custom' | 'volcengine'>('custom');
 
   // Separate states for keys
   const [officialKey, setOfficialKey] = useState('');
   const [customKey, setCustomKey] = useState('');
+  const [volcengineKey, setVolcengineKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
 
-  // Derived current key for display/logic (optional, or just use expression)
-  const currentKey = apiMode === 'official' ? officialKey : customKey;
-  const setApiKey = (val: string) => apiMode === 'official' ? setOfficialKey(val) : setCustomKey(val);
+  // Derived current key for display/logic
+  const currentKey = apiMode === 'official' ? officialKey : (apiMode === 'volcengine' ? volcengineKey : customKey);
+  const setApiKey = (val: string) => {
+    if (apiMode === 'official') setOfficialKey(val);
+    else if (apiMode === 'volcengine') setVolcengineKey(val);
+    else setCustomKey(val);
+  };
 
   // Model Config State
   const [reasoningModel, setReasoningModel] = useState('gemini-3-pro-high');
@@ -34,7 +39,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   useEffect(() => {
     if (isOpen) {
       // Load API mode
-      const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom';
+      const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
       setApiMode(storedMode);
 
       // Load keys from separate storage (with fallback to legacy)
@@ -42,14 +47,16 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
 
       const storedOfficialKey = localStorage.getItem('berryxia_api_key_official') || (storedMode === 'official' ? legacyKey : '');
       const storedCustomKey = localStorage.getItem('berryxia_api_key_custom') || (storedMode === 'custom' ? legacyKey : '');
+      const storedVolcengineKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
 
       setOfficialKey(storedOfficialKey);
       setCustomKey(storedCustomKey);
+      setVolcengineKey(storedVolcengineKey);
 
       const storedUrl = localStorage.getItem('berryxia_base_url') || process.env.API_ENDPOINT || 'http://127.0.0.1:8045';
       setBaseUrl(storedUrl);
 
-      // Load Models - different defaults for official vs custom
+      // Load Models - different defaults for official vs custom vs volcengine
       let defaultReasoning = 'gemini-3-pro-high';
       let defaultFast = 'gemini-3-flash';
       let defaultImage = 'gemini-3-pro-image';
@@ -58,6 +65,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
         defaultReasoning = 'gemini-3-flash-preview';
         defaultFast = 'gemini-3-flash-preview';
         defaultImage = 'imagen-3.0-generate-001';
+      } else if (storedMode === 'volcengine') {
+        // Volcengine specific defaults
+        defaultReasoning = 'gemini-3-pro-high'; // Fallback to reasoning? Or user didn't specify. Keep Gemini for text.
+        defaultFast = 'gemini-3-flash';
+        defaultImage = 'seedream-4-5-251128'; // User provided model
       }
 
       const r = localStorage.getItem('berryxia_model_reasoning') || defaultReasoning;
@@ -97,36 +109,62 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     setIsTestLoading(true);
     setStatus('idle');
     try {
-      let client: GoogleGenAI;
-
-      if (apiMode === 'official') {
-        // Official Google AI API - no custom baseUrl
-        client = new GoogleGenAI({
-          apiKey: currentKey
+      if (apiMode === 'volcengine') {
+        // Lightweight auth check for Volcengine
+        // We make a request with empty/invalid body. If we get 400 (Bad Request), Auth is likely OK.
+        // If we get 401/403, Auth is bad.
+        const response = await fetch("https://ark.ap-southeast.bytepluses.com/api/v3/images/generations", {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentKey}`
+          },
+          body: JSON.stringify({ model: 'check', prompt: '' })
         });
-      } else {
-        // Custom endpoint
-        let finalUrl = baseUrl;
-        if (finalUrl.endsWith('/v1')) {
-          finalUrl = finalUrl.substring(0, finalUrl.length - 3);
-        } else if (finalUrl.endsWith('/v1/')) {
-          finalUrl = finalUrl.substring(0, finalUrl.length - 4);
+
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(`Authentication Failed (${response.status})`);
+        }
+        // 400 is expected for invalid body, which means we reached the server and passed Auth
+        // 200 is unexpected but also good
+        if (response.status >= 500) {
+          throw new Error(`Server Error (${response.status})`);
         }
 
-        client = new GoogleGenAI({
-          apiKey: currentKey,
-          httpOptions: { baseUrl: finalUrl }
+        setStatus('success');
+        setStatusMsg("连接成功！(Auth Verified)");
+      } else {
+        let client: GoogleGenAI;
+
+        if (apiMode === 'official') {
+          // Official Google AI API - no custom baseUrl
+          client = new GoogleGenAI({
+            apiKey: currentKey
+          });
+        } else {
+          // Custom endpoint
+          let finalUrl = baseUrl;
+          if (finalUrl.endsWith('/v1')) {
+            finalUrl = finalUrl.substring(0, finalUrl.length - 3);
+          } else if (finalUrl.endsWith('/v1/')) {
+            finalUrl = finalUrl.substring(0, finalUrl.length - 4);
+          }
+
+          client = new GoogleGenAI({
+            apiKey: currentKey,
+            httpOptions: { baseUrl: finalUrl }
+          });
+        }
+
+        // Use ai.models.generateContent per SDK docs
+        await client.models.generateContent({
+          model: fastModel,
+          contents: "Ping"
         });
+
+        setStatus('success');
+        setStatusMsg("连接成功！");
       }
-
-      // Use ai.models.generateContent per SDK docs
-      await client.models.generateContent({
-        model: fastModel,
-        contents: "Ping"
-      });
-
-      setStatus('success');
-      setStatusMsg("连接成功！");
     } catch (e: any) {
       console.error(e);
       setStatus('error');
@@ -148,6 +186,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
     // Save Keys Separately
     localStorage.setItem('berryxia_api_key_official', officialKey);
     localStorage.setItem('berryxia_api_key_custom', customKey);
+    localStorage.setItem('berryxia_api_key_volcengine', volcengineKey);
 
     // Legacy support (optional, but good for safety)
     localStorage.setItem('berryxia_api_key', currentKey);
@@ -198,12 +237,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                   <button
                     onClick={() => {
                       setApiMode('official');
-                      // No longer clearing key here
                       setReasoningModel('gemini-3-flash-preview');
                       setFastModel('gemini-3-flash-preview');
-                      setImageModel('gemini-3-pro-image-preview');
+                      setImageModel('imagen-3.0-generate-001');
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${apiMode === 'official'
+                    className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-bold transition-all ${apiMode === 'official'
                       ? 'bg-orange-600 text-white'
                       : 'bg-stone-800 text-stone-400 hover:bg-stone-700'
                       }`}
@@ -215,20 +253,35 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
                   </button>
                   <button
                     onClick={() => {
+                      setApiMode('volcengine');
+                      // No custom defaults for text models yet provided, keep default
+                      setImageModel('seedream-4-5-251128');
+                    }}
+                    className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-bold transition-all ${apiMode === 'volcengine'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-stone-800 text-stone-400 hover:bg-stone-700'
+                      }`}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <Icons.Zap size={16} />
+                      <span>火山引擎</span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
                       setApiMode('custom');
-                      // No longer clearing key here
                       setReasoningModel('gemini-3-pro-high');
                       setFastModel('gemini-3-flash');
                       setImageModel('gemini-3-pro-image');
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${apiMode === 'custom'
+                    className={`flex-1 py-2.5 px-2 rounded-xl text-xs font-bold transition-all ${apiMode === 'custom'
                       ? 'bg-orange-600 text-white'
                       : 'bg-stone-800 text-stone-400 hover:bg-stone-700'
                       }`}
                   >
                     <div className="flex flex-col items-center gap-1">
                       <Icons.Server size={16} />
-                      <span>自定义端点</span>
+                      <span>自定义</span>
                     </div>
                   </button>
                 </div>

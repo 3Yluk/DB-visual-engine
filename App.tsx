@@ -6,7 +6,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-import React, { useState, useEffect, useRef, useTransition } from 'react';
+import React, { useState, useEffect, useRef, useTransition, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { ImageUploader } from './components/ImageUploader';
 import { AgentCard } from './components/AgentCard';
@@ -109,7 +109,7 @@ const App: React.FC = () => {
 
   /* Existing state declarations */
   // ...
-  const [apiMode, setApiMode] = useState<'official' | 'custom'>('custom');
+  const [apiMode, setApiMode] = useState<'official' | 'custom' | 'volcengine'>('custom');
   const [activeModelName, setActiveModelName] = useState('Gemini 3.0 Flash'); // Default display
   const [isMentionMenuOpen, setIsMentionMenuOpen] = useState(false);
   const [hoveredHistoryIndex, setHoveredHistoryIndex] = useState<number | null>(null);
@@ -118,7 +118,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       // Load API Mode
-      const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom';
+      const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
       setApiMode(storedMode);
 
       // Load specific model name for display (prefer 'fast' model as it's used for chat)
@@ -132,9 +132,10 @@ const App: React.FC = () => {
       }
 
       // Check localStorage for key presence to update indicator color
-      const storedKey = storedMode === 'official'
-        ? (localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key'))
-        : (localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key'));
+      let storedKey = '';
+      if (storedMode === 'official') storedKey = localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key') || '';
+      else if (storedMode === 'volcengine') storedKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
+      else storedKey = localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key') || '';
 
       if (storedKey) setHasKey(true);
 
@@ -443,19 +444,24 @@ const App: React.FC = () => {
   ]);
 
   // Helper to load history item
-  const loadHistoryItem = (index: number) => {
+  // Helper to load history item
+  const loadHistoryItem = useCallback((index: number) => {
     // 1. Check if index is valid
-    if (index < 0 || index >= state.history.length) return;
+    if (index < 0 || index >= historyRef.current.length) return;
 
-    const historyItem = state.history[index];
+    const historyItem = historyRef.current[index];
     if (!historyItem) return;
 
     // 2. Set selected index & Display Image (High Priority UI Update)
     // 优先更新 UI，让用户感觉到操作立即响应
     setSelectedHistoryIndex(index);
     // 在对比模式下，不更新 displayImage（左侧图），实现“锁定左侧，右侧切换”的扫描体验
-    if (!isComparisonMode) {
+    // 用户反馈：左键点击应总是还原该记录的“原图 vs 生成图”对比
+    // Remove "Lock Left" logic to restore standard behavior
+    if (historyItem.originalImage) {
       setDisplayImage(getImageSrc(historyItem.originalImage, historyItem.mimeType));
+    } else {
+      setDisplayImage(null);
     }
 
     // 3. Restore state (Deferred Update using startTransition)
@@ -471,7 +477,7 @@ const App: React.FC = () => {
         generatedImage: historyItem.generatedImage
       }));
     });
-  };
+  }, [isComparisonMode]); // 依赖 isComparisonMode，其他依赖使用 ref 或 setter 消除
 
   // Keyboard Shortcuts for History and Fullscreen
   useEffect(() => {
@@ -579,10 +585,13 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isComparisonMode]); // 仅在模式切换时执行，避免普通切换时的冗余更新
 
-  const showToast = (message: string, type: ToastType = 'info') => {
+  const removeToast = useCallback((id: string) => setToasts(prev => prev.filter(t => t.id !== id)), []);
+
+  const showToast = useCallback((message: string, type: ToastType = 'info') => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { id, message, type }]);
-  };
+    setTimeout(() => removeToast(id), 3000);
+  }, [removeToast]);
 
   // Helper: Push a new prompt to history (max 20 entries)
   const pushPromptHistory = (newPrompt: string, source: string) => {
@@ -593,8 +602,6 @@ const App: React.FC = () => {
       return { ...prev, promptHistory: history, currentPromptIndex: 0 };
     });
   };
-
-  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
 
 
@@ -1096,11 +1103,7 @@ const App: React.FC = () => {
       setState(prev => ({ ...prev, isGeneratingImage: false }));
 
       if (successCount > 0) {
-        if (totalCount === 1) {
-          setTimeout(() => handleRunQA(), 500);
-        } else {
-          showToast(t('toast.successGenerated', { count: successCount, total: totalCount }), 'success');
-        }
+        showToast(t('toast.successGenerated', { count: successCount, total: totalCount }), 'success');
       } else {
         showToast(t('toast.generateFailed'), "error");
       }
@@ -1112,13 +1115,13 @@ const App: React.FC = () => {
     }
   };
 
-  const setSelectedHistoryIndex = (index: number) => {
+  const setSelectedHistoryIndex = useCallback((index: number) => {
     setState(prev => ({ ...prev, selectedHistoryIndex: index }));
-  };
+  }, []);
 
   // Handler to delete a history item by index
-  const handleDeleteHistoryItem = async (index: number) => {
-    const historyItem = state.history[index];
+  const handleDeleteHistoryItem = useCallback(async (index: number) => {
+    const historyItem = historyRef.current[index];
 
     // Delete from IndexedDB if it exists
     if (historyItem?.id) {
@@ -1151,12 +1154,26 @@ const App: React.FC = () => {
         generatedImages: newGeneratedImages,
         history: newHistory,
         selectedHistoryIndex: newSelectedIndex,
-        generatedImage: newGeneratedImages.length > 0 ? newGeneratedImages[newSelectedIndex] : null
+        image: newHistory[newSelectedIndex]?.originalImage || null,
+        generatedImage: newGeneratedImages[newSelectedIndex] || null
       };
     });
 
-    showToast(t('toast.deleted'), 'info');
-  };
+    showToast(t('toast.deleted'), 'success');
+  }, [showToast, t]);
+
+  const handleHistoryContextMenu = useCallback((e: React.MouseEvent, index: number) => {
+    e.preventDefault();
+    const item = historyRef.current[index];
+    // User expects the clicked image (Thumbnail/Result) to be the comparison source
+    // So prioritize Generated Image, fallback to Original Image
+    const targetImage = item?.generatedImage || item?.originalImage;
+
+    if (targetImage) {
+      setDisplayImage(getImageSrc(targetImage, item?.mimeType || 'image/png'));
+      setIsComparisonMode(true);
+    }
+  }, []);
 
   // Handler to download original image
   const handleDownloadHD = async (index: number) => {
@@ -2382,6 +2399,8 @@ const App: React.FC = () => {
                     <ImageComparisonSlider
                       beforeImage={displayImage}
                       afterImage={getOriginalFromHistory(state.history, state.selectedHistoryIndex)}
+                      beforeLabel={displayImage === getImageSrc(state.history[state.selectedHistoryIndex]?.originalImage, state.history[state.selectedHistoryIndex]?.mimeType) ? t('comparison.original') : t('comparison.selected')}
+                      afterLabel={t('comparison.generated')}
                       className="w-full h-full border-0 rounded-none bg-stone-950/50"
                       layoutData={state.layoutData}
                       isAnalyzingLayout={state.isAnalyzingLayout}
@@ -2536,16 +2555,9 @@ const App: React.FC = () => {
                   imageUrl={`data:image/png;base64,${img}`}
                   index={index}
                   isActive={index === state.selectedHistoryIndex}
-                  onClick={() => loadHistoryItem(index)}
-                  onDelete={() => handleDeleteHistoryItem(index)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    // Add clicked image to left side of comparison WITHOUT changing current selection
-                    const imgUrl = getOriginalFromHistory(state.history, index);
-                    setDisplayImage(imgUrl);
-                    setIsComparisonMode(true);
-                    // showToast(t('gallery.addedToComparisonLeft'), 'success'); // 不需要提示，避免遮挡
-                  }}
+                  onClick={loadHistoryItem}
+                  onDelete={handleDeleteHistoryItem}
+                  onContextMenu={handleHistoryContextMenu}
                 />
               </div>
             ))}

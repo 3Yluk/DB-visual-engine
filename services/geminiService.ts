@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { AGENTS, SINGLE_STEP_REVERSE_PROMPT } from "../constants";
 import { AgentRole, LayoutElement } from "../types";
@@ -17,17 +16,14 @@ export interface ReverseEngineeringResult {
 }
 
 let ai: GoogleGenAI | null = null;
-let currentConfig = { apiKey: '', baseUrl: '', mode: 'custom' as 'official' | 'custom' };
+let currentConfig = { apiKey: '', baseUrl: '', mode: 'custom' as 'official' | 'custom' | 'volcengine' };
 
 // Default Model Configuration
-// Updated to use stable models compatible with official API
 let modelConfig = {
   reasoning: "gemini-3-flash-preview",
   fast: "gemini-3-flash-preview",
   image: "gemini-3-pro-image-preview"
 };
-
-
 
 const translateErrorMessage = (error: any): string => {
   const msg = error?.toString() || "";
@@ -101,8 +97,9 @@ const translateErrorMessage = (error: any): string => {
   return msg;
 };
 
-export const configureClient = (apiKey: string, baseUrl: string, mode: 'official' | 'custom' = 'custom') => {
+export const configureClient = (apiKey: string, baseUrl: string, mode: 'official' | 'custom' | 'volcengine' = 'custom') => {
   if (!apiKey) return;
+  // Volcengine mode doesn't strictly require baseUrl if we hardcode it, but we can accept it
   if (mode === 'custom' && !baseUrl) return;
 
   currentConfig = { apiKey, baseUrl, mode };
@@ -112,10 +109,13 @@ export const configureClient = (apiKey: string, baseUrl: string, mode: 'official
     ai = new GoogleGenAI({
       apiKey: apiKey
     });
+  } else if (mode === 'volcengine') {
+    // Volcengine mode
+    try {
+      ai = new GoogleGenAI({ apiKey });
+    } catch (e) { console.warn("Failed to init AI client for Volcengine mode", e); }
   } else {
     // Custom endpoint
-    // Google SDK expects the base API root (e.g. http://127.0.0.1:8045)
-    // Strip trailing /v1 if present
     let finalUrl = baseUrl;
     if (finalUrl.endsWith('/v1')) {
       finalUrl = finalUrl.substring(0, finalUrl.length - 3);
@@ -151,28 +151,30 @@ const initModelsFromStorage = () => {
 };
 
 // Initialize with env vars if available
-if (process.env.GEMINI_API_KEY && process.env.API_ENDPOINT) {
-  configureClient(process.env.GEMINI_API_KEY, process.env.API_ENDPOINT);
-}
+// Initialize with env vars if available - MOVED to getClient fallback
 initModelsFromStorage();
 
 const getClient = () => {
   if (!ai) {
     const storedUrl = localStorage.getItem('berryxia_base_url');
-    const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom';
-    const storedKey = storedMode === 'official'
-      ? (localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key'))
-      : (localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key'));
+    const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
+
+    let storedKey = '';
+    if (storedMode === 'official') storedKey = localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key') || '';
+    else if (storedMode === 'volcengine') storedKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
+    else storedKey = localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key') || '';
 
     if (storedKey) {
       configureClient(storedKey, storedUrl || '', storedMode);
+    } else if (process.env.GEMINI_API_KEY && process.env.API_ENDPOINT) {
+      // Fallback to Env if no storage config
+      configureClient(process.env.GEMINI_API_KEY, process.env.API_ENDPOINT);
     }
   }
   if (!ai) throw new Error("Google AI Client not configured. Please set API Key and Endpoint.");
   return ai;
 };
 
-// Helper: Get agent prompt from localStorage or fallback to default
 // Helper: Get agent prompt from promptManager
 export const getAgentPrompt = (role: AgentRole): string => {
   return promptManager.getActivePromptContent(role, AGENTS[role].systemInstruction);
@@ -273,6 +275,11 @@ export async function detectLayout(imageBase64: string, mimeType: string = "imag
 }
 
 export async function* streamConsistencyCheck(originalImage: string, generatedImage: string) {
+  if (currentConfig.mode === 'volcengine') {
+    yield "Volcengine 模式下暂不支持质检功能 (需 Google Gemini Vision 模型)。";
+    return;
+  }
+
   const client = getClient();
   const modelId = modelConfig.reasoning;
   const prompt = `${AGENTS[AgentRole.CRITIC].systemInstruction}\n\nCompare Source vs Replica.`;
@@ -394,7 +401,90 @@ export async function generateImageFromPrompt(
   mimeType: string = "image/jpeg",
   signal?: AbortSignal
 ): Promise<string | null> {
-  const client = getClient();
+  const client = getClient(); // Ensure config is loaded before mode check
+
+  // VOLCENGINE LOGIC
+  if (currentConfig.mode === 'volcengine') {
+    const modelId = modelConfig.image || 'seedream-4-5-251128'; // Default fallback
+    // Use proxy in dev environment to bypass CORS
+    const endpoint = import.meta.env.DEV
+      ? "/api/volcengine/api/v3/images/generations"
+      : "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations";
+
+    console.log(`[Volcengine] Generating with Model: ${modelId}`);
+
+    // Map aspect ratio to size
+    // Volcengine (Seedream) typically supports: 1024x1024, 768x1024, 1024x768 etc.
+    // Volcengine (Seedream) requires > 3.6M pixels (2K resolution)
+    let width = 2048;
+    let height = 2048;
+
+    const parseAspectRatioFromPrompt = (prompt: string): string => {
+      const arMatch = prompt.match(/--ar\s+(\d+):(\d+)/i);
+      if (arMatch) {
+        const w = parseInt(arMatch[1]);
+        const h = parseInt(arMatch[2]);
+        if (w > h) return "16:9";
+        if (h > w) return "9:16";
+        return "1:1";
+      }
+      const aspectMatch = prompt.match(/aspect\s*ratio[:\s]+(\d+):(\d+)/i);
+      if (aspectMatch) {
+        const w = parseInt(aspectMatch[1]);
+        const h = parseInt(aspectMatch[2]);
+        if (w > h) return "16:9";
+        if (h > w) return "9:16";
+        return "1:1";
+      }
+      return aspectRatio;
+    };
+
+    const finalRatioStr = parseAspectRatioFromPrompt(promptContext);
+    if (finalRatioStr === '16:9') { width = 2560; height = 1440; }
+    else if (finalRatioStr === '9:16') { width = 1440; height = 2560; }
+    else if (finalRatioStr === '4:3') { width = 2304; height = 1728; }
+    else if (finalRatioStr === '3:4') { width = 1728; height = 2304; }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentConfig.apiKey}`
+        },
+        body: JSON.stringify({
+          model: modelId,
+          prompt: promptContext,
+          size: `${width}x${height}`,
+          guidance_scale: 2.5,
+          response_format: "b64_json",
+          sequential_image_generation: "disabled",
+          stream: false,
+          watermark: false
+        }),
+        signal
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Volcengine Error ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      // Check standard format data[0].url or data[0].b64_json
+      if (data.data && data.data.length > 0) {
+        const item = data.data[0];
+        if (item.b64_json) return item.b64_json;
+        if (item.url) return item.url;
+      }
+      throw new Error("No image data in response");
+
+    } catch (e: any) {
+      console.error("Volcengine gen error", e);
+      if (e.name === 'AbortError') throw e; // Pass abort
+      throw new Error(`Volcengine Failed: ${e.message}`);
+    }
+  }
 
   // Parse aspect ratio from prompt text (user may have edited it)
   const parseAspectRatioFromPrompt = (prompt: string): string => {

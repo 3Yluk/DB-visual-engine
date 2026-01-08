@@ -5,7 +5,7 @@ import { LayoutElement } from '../types';
 import { ImageZoomState, calculateNewZoom } from '../utils/zoom';
 
 interface ImageComparisonSliderProps {
-  beforeImage: string;
+  beforeImage: string | null;
   afterImage: string;
   beforeLabel?: string;
   afterLabel?: string;
@@ -147,13 +147,19 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
         <div className="absolute inset-0 flex">
           {/* Before Image */}
           <div className="flex-1 relative border-r border-stone-700 overflow-hidden">
-            <img
-              src={beforeImage}
-              alt={beforeLabel}
-              className="w-full h-full object-contain transition-transform duration-100"
-              style={transformStyle}
-              draggable={false}
-            />
+            {beforeImage ? (
+              <img
+                src={beforeImage}
+                alt={beforeLabel}
+                className="w-full h-full object-contain transition-transform duration-100"
+                style={transformStyle}
+                draggable={false}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-stone-900 text-stone-600">
+                <Icons.Slash size={32} />
+              </div>
+            )}
             <div className="absolute top-3 left-3 px-2 py-1 bg-black/40 backdrop-blur-sm rounded text-white/90 select-none flex items-center">
               <span className="text-[10px] font-medium uppercase tracking-wider leading-none pt-[1px]">{beforeLabel}</span>
             </div>
@@ -227,16 +233,27 @@ export const ImageComparisonSlider: React.FC<ImageComparisonSliderProps> = ({
         draggable={false}
       />
 
-      <img
-        src={beforeImage}
-        alt={beforeLabel}
-        className="absolute inset-0 w-full h-full object-contain transition-transform duration-100"
-        style={{
-          ...transformStyle,
-          clipPath: `inset(0 ${100 - sliderPosition}% 0 0)`,
-        }}
-        draggable={false}
-      />
+      {beforeImage ? (
+        <img
+          src={beforeImage}
+          alt={beforeLabel}
+          className="absolute inset-0 w-full h-full object-contain transition-transform duration-100"
+          style={{
+            ...transformStyle,
+            clipPath: `inset(0 ${100 - sliderPosition}% 0 0)`,
+          }}
+          draggable={false}
+        />
+      ) : (
+        <div
+          className="absolute inset-0 w-full h-full flex items-center justify-center bg-stone-900 text-stone-600"
+          style={{
+            clipPath: `inset(0 ${100 - sliderPosition}% 0 0)`,
+          }}
+        >
+          <Icons.Slash size={48} opacity={0.3} />
+        </div>
+      )}
 
       {layoutData && <LayoutOverlay data={layoutData} show={true} />}
 

@@ -60,7 +60,8 @@ import {
     Columns,
     GitCompare,
     Search,
-    LucideProps
+    LucideProps,
+    Zap
 } from 'lucide-react';
 
 const createIcon = (Icon: React.ComponentType<LucideProps>) => {
@@ -123,5 +124,6 @@ export const Icons = {
     Reverse: createIcon(ArrowLeftRight),
     Columns: createIcon(Columns),
     GitCompare: createIcon(GitCompare),
-    Search: createIcon(Search)
+    Search: createIcon(Search),
+    Zap: createIcon(Zap)
 };

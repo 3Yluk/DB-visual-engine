@@ -43,6 +43,12 @@ export const DOCUMENTATION_CATEGORIES: DocCategory[] = [
                 titleEN: "Release Notes",
                 icon: "History",
                 contentCN: `
+## v2.7.4 (2026-01-08)
+
+### 新增功能
+- 新增 **Volcengine (火山引擎 Ark)** API 支持
+- API 设置面板新增火山引擎配置选项，支持自定义模型名称
+
 ## v2.7.3 (2026-01-08)
 
 ### 架构优化
@@ -111,6 +117,12 @@ export const DOCUMENTATION_CATEGORIES: DocCategory[] = [
 *更多历史版本请查看项目仓库的 Release 页面*
 `,
                 contentEN: `
+## v2.7.4 (2026-01-08)
+
+### New Features
+- Added support for **Volcengine (Ark)** API
+- Added Volcengine configuration options in API settings, supporting custom model names
+
 ## v2.7.3 (2026-01-08)
 
 ### Architecture Improvements

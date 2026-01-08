@@ -1,17 +1,17 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Icons } from './Icons';
 
 interface HistoryThumbnailProps {
   imageUrl: string;
   index: number;
   isActive: boolean;
-  onClick: () => void;
-  onDelete?: () => void;
-  onDownloadHD?: () => void;
-  onContextMenu?: (e: React.MouseEvent) => void;
+  onClick: (index: number) => void;
+  onDelete?: (index: number) => void;
+  onDownloadHD?: (index: number) => void;
+  onContextMenu?: (e: React.MouseEvent, index: number) => void;
 }
 
-export const HistoryThumbnail: React.FC<HistoryThumbnailProps> = ({
+export const HistoryThumbnail = memo(({
   imageUrl,
   index,
   isActive,
@@ -19,21 +19,27 @@ export const HistoryThumbnail: React.FC<HistoryThumbnailProps> = ({
   onDelete,
   onDownloadHD,
   onContextMenu,
-}) => {
+}: HistoryThumbnailProps) => {
+  const handleClick = () => onClick(index);
+
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onDelete?.();
+    onDelete?.(index);
   };
 
   const handleDownloadHD = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onDownloadHD?.();
+    onDownloadHD?.(index);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    onContextMenu?.(e, index);
   };
 
   return (
     <div
-      onClick={onClick}
-      onContextMenu={onContextMenu}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
       className={`
         relative w-full h-full rounded-lg overflow-hidden border cursor-pointer
         transition-all duration-200 group
@@ -61,4 +67,19 @@ export const HistoryThumbnail: React.FC<HistoryThumbnailProps> = ({
       )}
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // 自定义比较函数，确保只有相关属性变化时才重渲染
+  return (
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.imageUrl === nextProps.imageUrl &&
+    prevProps.index === nextProps.index &&
+    // 函数引用通常不需要比较，因为我们假设父组件会传递稳定的引用，
+    // 或者如果它们改变了，我们也应该重渲染。
+    // 但为了极致性能，假如父组件还没完全优化好，这里可以激进一点：
+    // 如果 isActive, imageUrl, index 没变，我们就不渲染。
+    // 这假设回调函数的行为是不变的（这通常是真的，因为它们只是 loadHistoryItem 等）
+    prevProps.onClick === nextProps.onClick // 最好还是比较一下引用
+  );
+});
+
+HistoryThumbnail.displayName = 'HistoryThumbnail';

@@ -8,6 +8,13 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3005,
       host: '0.0.0.0',
+      proxy: {
+        '/api/volcengine': {
+          target: 'https://ark.ap-southeast.bytepluses.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/volcengine/, '')
+        }
+      }
     },
     plugins: [react()],
     define: {

@@ -8,7 +8,7 @@ interface AspectRatioSelectorProps {
   onRatioChange: (ratio: string) => void;
   on4KChange: (is4K: boolean) => void;
   disabled?: boolean;
-  apiMode?: 'official' | 'custom';
+  apiMode?: 'official' | 'custom' | 'volcengine';
   language?: 'CN' | 'EN';
 }
 
@@ -125,8 +125,8 @@ export const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({
     return (
       <div
         className={`rounded-sm border transition-all ${isSelected
-            ? 'border-orange-400 bg-orange-400/20'
-            : 'border-stone-500 bg-stone-700/50'
+          ? 'border-orange-400 bg-orange-400/20'
+          : 'border-stone-500 bg-stone-700/50'
           }`}
         style={{
           width: option.width * scale,
@@ -223,10 +223,10 @@ export const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({
       {/* Mode indicator */}
       <div className="mt-2 pt-2 border-t border-stone-700/50">
         <span className={`text-[8px] font-medium px-1.5 py-0.5 rounded ${apiMode === 'official'
-            ? 'bg-blue-900/30 text-blue-400'
-            : 'bg-violet-900/30 text-violet-400'
+          ? 'bg-blue-900/30 text-blue-400'
+          : (apiMode === 'volcengine' ? 'bg-orange-900/30 text-orange-400' : 'bg-violet-900/30 text-violet-400')
           }`}>
-          {apiMode === 'official' ? 'OFFICIAL API' : 'CUSTOM PROXY'}
+          {apiMode === 'official' ? 'OFFICIAL API' : (apiMode === 'volcengine' ? 'VOLCENGINE' : 'CUSTOM PROXY')}
         </span>
       </div>
     </div>
@@ -240,8 +240,8 @@ export const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all ${disabled
-            ? 'opacity-40 cursor-not-allowed'
-            : 'hover:bg-stone-700 cursor-pointer'
+          ? 'opacity-40 cursor-not-allowed'
+          : 'hover:bg-stone-700 cursor-pointer'
           } ${isOpen ? 'bg-stone-700' : ''}`}
         title={t.selectRatio}
       >
