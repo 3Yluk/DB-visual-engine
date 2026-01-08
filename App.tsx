@@ -2156,7 +2156,6 @@ const App: React.FC = () => {
           const imgUrl = getOriginalFromHistory(state.history, index);
           setDisplayImage(imgUrl);
           setIsComparisonMode(true);
-          loadHistoryItem(index);
           showToast(t('gallery.addedToComparisonLeft'), 'success');
         }}
       />
@@ -2537,11 +2536,10 @@ const App: React.FC = () => {
                   onDelete={() => handleDeleteHistoryItem(index)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    // Directly add to comparison mode without showing menu
+                    // Add clicked image to left side of comparison WITHOUT changing current selection
                     const imgUrl = getOriginalFromHistory(state.history, index);
                     setDisplayImage(imgUrl);
                     setIsComparisonMode(true);
-                    loadHistoryItem(index);
                     showToast(t('gallery.addedToComparisonLeft'), 'success');
                   }}
                 />
