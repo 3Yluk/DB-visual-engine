@@ -50,6 +50,7 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
     const { t } = useI18n();
     const [viewMode, setViewMode] = useState<'timeline' | 'grouped'>('timeline');
     const [selectedOriginalId, setSelectedOriginalId] = useState<string | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     // 1. Calculate Grouped Data (Stable, depends only on history)
     const groupedData = useMemo(() => {
@@ -114,11 +115,12 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
         return Array.from(groups.values()).sort((a, b) => b.latestTimestamp - a.latestTimestamp);
     }, [history]);
 
-    // 2. Filter Visible Images (Depends on viewMode & selection)
+    // 2. Filter Visible Images (Depends on viewMode, selection, and search)
     const { visibleImages, originalIndices } = useMemo(() => {
         let indices: number[] = [];
         let thumbs: string[] = [];
 
+        // First, apply group filter
         if (viewMode === 'timeline' || selectedOriginalId === null) {
             indices = history.map((_, i) => i);
             thumbs = allThumbnails;
@@ -140,8 +142,26 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
             });
         }
 
+        // Then, apply search filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase().trim();
+            const filteredIndices: number[] = [];
+            const filteredThumbs: string[] = [];
+
+            indices.forEach((globalIdx, localIdx) => {
+                const item = history[globalIdx];
+                const prompt = item.prompt || '';
+                if (prompt.toLowerCase().includes(query)) {
+                    filteredIndices.push(globalIdx);
+                    filteredThumbs.push(thumbs[localIdx]);
+                }
+            });
+
+            return { visibleImages: filteredThumbs, originalIndices: filteredIndices };
+        }
+
         return { visibleImages: thumbs, originalIndices: indices };
-    }, [history, allThumbnails, viewMode, selectedOriginalId]);
+    }, [history, allThumbnails, viewMode, selectedOriginalId, searchQuery]);
 
     const [focusedIndex, setFocusedIndex] = useState<number>(0);
     const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -729,8 +749,27 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({
                     </div>
                 </div>
 
-                {/* Right: Close */}
-                <div className="z-10">
+                {/* Right: Search + Close */}
+                <div className="z-10 flex items-center gap-2">
+                    {/* Search Input */}
+                    <div className="relative">
+                        <Icons.Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-500" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="搜索提示词..."
+                            className="w-48 pl-8 pr-3 py-1.5 bg-stone-900 border border-stone-800 rounded-lg text-xs text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-amber-500/50 transition-colors"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-300"
+                            >
+                                <Icons.X size={12} />
+                            </button>
+                        )}
+                    </div>
                     <button
                         onClick={onClose}
                         className="p-2 rounded-full hover:bg-stone-900 text-stone-500 hover:text-stone-200 transition-all active:scale-95"

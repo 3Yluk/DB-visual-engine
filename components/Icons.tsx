@@ -59,6 +59,7 @@ import {
     FolderOpen,
     Columns,
     GitCompare,
+    Search,
     LucideProps
 } from 'lucide-react';
 
@@ -121,5 +122,6 @@ export const Icons = {
     FolderOpen: createIcon(FolderOpen),
     Reverse: createIcon(ArrowLeftRight),
     Columns: createIcon(Columns),
-    GitCompare: createIcon(GitCompare)
+    GitCompare: createIcon(GitCompare),
+    Search: createIcon(Search)
 };
