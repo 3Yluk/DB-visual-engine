@@ -449,20 +449,24 @@ const App: React.FC = () => {
     const historyItem = state.history[index];
     if (!historyItem) return;
 
-    // 2. Set selected index
+    // 2. Set selected index & Display Image (High Priority UI Update)
+    // 优先更新 UI，让用户感觉到操作立即响应
     setSelectedHistoryIndex(index);
-
-    // 3. Restore state
     setDisplayImage(getImageSrc(historyItem.originalImage, historyItem.mimeType));
-    setState(prev => ({
-      ...prev,
-      editablePrompt: historyItem.prompt,
-      promptCache: { ...prev.promptCache, CN: historyItem.prompt },
-      image: historyItem.originalImage,
-      mimeType: historyItem.mimeType || 'image/png',
-      detectedAspectRatio: historyItem.detectedAspectRatio || '1:1',
-      generatedImage: historyItem.generatedImage
-    }));
+
+    // 3. Restore state (Deferred Update)
+    // 将繁重的数据恢复操作延迟到下一帧，避免阻塞 UI 响应
+    requestAnimationFrame(() => {
+      setState(prev => ({
+        ...prev,
+        editablePrompt: historyItem.prompt,
+        promptCache: { ...prev.promptCache, CN: historyItem.prompt },
+        image: historyItem.originalImage,
+        mimeType: historyItem.mimeType || 'image/png',
+        detectedAspectRatio: historyItem.detectedAspectRatio || '1:1',
+        generatedImage: historyItem.generatedImage
+      }));
+    });
   };
 
   // Keyboard Shortcuts for History and Fullscreen
