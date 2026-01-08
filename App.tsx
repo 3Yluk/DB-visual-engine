@@ -17,7 +17,7 @@ import { ReferenceImageList } from './components/ReferenceImageList';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { StorageIndicator } from './components/StorageIndicator';
 import { Icons } from './components/Icons';
-import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt, executeSmartAnalysis } from './services/geminiService';
+import { streamAgentAnalysis, generateImageFromPrompt, streamConsistencyCheck, refinePromptWithFeedback, detectLayout, translatePrompt, executeSmartAnalysis, configureClient, configureModels, getModeDefaultModels } from './services/geminiService';
 import { saveHistoryItem, getHistory, deleteHistoryItemById } from './services/historyService';
 import { detectSkillIntent, createUserMessage, createAssistantMessage, createSkillResultMessage, executeQualityCheck, executeRefineSkill, executeReverseSkill } from './services/chatService';
 import { promptManager, PromptVersion } from './services/promptManager';
@@ -120,17 +120,17 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       // Load API Mode
-      const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
+      const storedMode = (localStorage.getItem('unimage_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
       setApiMode(storedMode);
 
       // Load specific model name for display based on mode
       if (storedMode === 'volcengine') {
         // For Volcengine, show the vision model (used for reverse engineering)
-        const storedVisionModel = localStorage.getItem('berryxia_model_vision') || 'seed-1-6-250915';
+        const storedVisionModel = localStorage.getItem('unimage_model_vision') || 'seed-1-6-250915';
         setActiveModelName(storedVisionModel);
       } else {
         // For Google modes, show the fast model (used for chat)
-        const storedFastModel = localStorage.getItem('berryxia_model_fast');
+        const storedFastModel = localStorage.getItem('unimage_model_fast');
         if (storedFastModel) setActiveModelName(storedFastModel);
       }
 
@@ -142,9 +142,9 @@ const App: React.FC = () => {
 
       // Check localStorage for key presence to update indicator color
       let storedKey = '';
-      if (storedMode === 'official') storedKey = localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key') || '';
-      else if (storedMode === 'volcengine') storedKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
-      else storedKey = localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key') || '';
+      if (storedMode === 'official') storedKey = localStorage.getItem('unimage_api_key_official') || localStorage.getItem('unimage_api_key') || '';
+      else if (storedMode === 'volcengine') storedKey = localStorage.getItem('unimage_api_key_volcengine') || '';
+      else storedKey = localStorage.getItem('unimage_api_key_custom') || localStorage.getItem('unimage_api_key') || '';
 
       if (storedKey) setHasKey(true);
 
@@ -623,25 +623,35 @@ const App: React.FC = () => {
     const nextMode = modes[(modes.indexOf(apiMode) + 1) % modes.length];
 
     setApiMode(nextMode);
-    localStorage.setItem('berryxia_api_mode', nextMode);
+    localStorage.setItem('unimage_api_mode', nextMode);
 
     // Update HasKey status
     let storedKey = '';
-    if (nextMode === 'official') storedKey = localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key') || '';
-    else if (nextMode === 'volcengine') storedKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
-    else storedKey = localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key') || '';
+    if (nextMode === 'official') storedKey = localStorage.getItem('unimage_api_key_official') || localStorage.getItem('unimage_api_key') || '';
+    else if (nextMode === 'volcengine') storedKey = localStorage.getItem('unimage_api_key_volcengine') || '';
+    else storedKey = localStorage.getItem('unimage_api_key_custom') || localStorage.getItem('unimage_api_key') || '';
 
     setHasKey(!!storedKey && storedKey.length > 5);
 
+    // 🆕 Reconfigure the Gemini service with appropriate key and mode
+    const baseUrl = localStorage.getItem('unimage_base_url') || '';
+    if (storedKey) {
+      configureClient(storedKey, baseUrl, nextMode);
+    }
+
+    // 🆕 Reconfigure models with mode-appropriate defaults
+    const modeDefaults = getModeDefaultModels(nextMode);
+    configureModels(modeDefaults);
+
     // Update Active Model Display
     if (nextMode === 'volcengine') {
-      const v = localStorage.getItem('berryxia_model_vision') || 'seed-1-6-250915';
+      const v = localStorage.getItem('unimage_model_vision') || modeDefaults.fast;
       setActiveModelName(v);
     } else {
       // Restore default/stored fast model for the mode
-      let f = localStorage.getItem('berryxia_model_fast');
-      if (!f) {
-        f = nextMode === 'official' ? 'gemini-3-flash-preview' : 'gemini-3-flash';
+      let f = localStorage.getItem('unimage_model_fast');
+      if (!f || f.includes('seed')) {
+        f = modeDefaults.fast;
       }
       setActiveModelName(f);
     }
@@ -656,25 +666,35 @@ const App: React.FC = () => {
 
   const handleSetApiMode = (targetMode: 'official' | 'custom' | 'volcengine') => {
     setApiMode(targetMode);
-    localStorage.setItem('berryxia_api_mode', targetMode);
+    localStorage.setItem('unimage_api_mode', targetMode);
 
     // Update HasKey status
     let storedKey = '';
-    if (targetMode === 'official') storedKey = localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key') || '';
-    else if (targetMode === 'volcengine') storedKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
-    else storedKey = localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key') || '';
+    if (targetMode === 'official') storedKey = localStorage.getItem('unimage_api_key_official') || localStorage.getItem('unimage_api_key') || '';
+    else if (targetMode === 'volcengine') storedKey = localStorage.getItem('unimage_api_key_volcengine') || '';
+    else storedKey = localStorage.getItem('unimage_api_key_custom') || localStorage.getItem('unimage_api_key') || '';
 
     setHasKey(!!storedKey && storedKey.length > 5);
 
+    // 🆕 Reconfigure the Gemini service with appropriate key and mode
+    const baseUrl = localStorage.getItem('unimage_base_url') || '';
+    if (storedKey) {
+      configureClient(storedKey, baseUrl, targetMode);
+    }
+
+    // 🆕 Reconfigure models with mode-appropriate defaults
+    const modeDefaults = getModeDefaultModels(targetMode);
+    configureModels(modeDefaults);
+
     // Update Active Model Display
     if (targetMode === 'volcengine') {
-      const v = localStorage.getItem('berryxia_model_vision') || 'seed-1-6-250915';
+      const v = localStorage.getItem('unimage_model_vision') || modeDefaults.fast;
       setActiveModelName(v);
     } else {
       // Restore default/stored fast model for the mode
-      let f = localStorage.getItem('berryxia_model_fast');
-      if (!f) {
-        f = targetMode === 'official' ? 'gemini-3-flash-preview' : 'gemini-3-flash';
+      let f = localStorage.getItem('unimage_model_fast');
+      if (!f || f.includes('seed')) {
+        f = modeDefaults.fast;
       }
       setActiveModelName(f);
     }
@@ -997,7 +1017,12 @@ const App: React.FC = () => {
       }, 1500);
 
     } catch (e: any) {
-      console.error(e);
+      // Quiet fail for quota limits
+      if (e.message?.includes('额度') || e.message?.includes('Exhausted')) {
+        console.warn("Client Notification:", e.message);
+      } else {
+        console.error(e);
+      }
       showToast(e.message || t('toast.analysisFailed'), 'error');
 
       const currentProgress = pipelineProgress;
@@ -1668,7 +1693,9 @@ const App: React.FC = () => {
             )}
 
             <textarea
-              value={state.editablePrompt}
+              value={showProgressView && pipelineProgress?.steps?.[0]?.streamingContent ? pipelineProgress.steps[0].streamingContent : state.editablePrompt}
+              readOnly={showProgressView}
+              placeholder={showProgressView ? "AI 正在分析画面..." : "输入提示词，或上传图片逆向生成..."}
               onChange={(e) => setState(prev => ({
                 ...prev,
                 editablePrompt: e.target.value,
@@ -1738,7 +1765,6 @@ const App: React.FC = () => {
                 });
               }}
               className="flex-1 w-full bg-stone-950 rounded-xl border border-stone-800 p-4 text-[12px] font-mono leading-relaxed focus:ring-2 focus:ring-stone-600 outline-none resize-none overflow-y-auto custom-scrollbar text-stone-200 placeholder:text-stone-600 relative z-20"
-              placeholder="输入提示词，或上传图片逆向生成..."
               spellCheck={false}
             />
 
@@ -2292,8 +2318,8 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* 进度视图覆盖层 */}
-          {
+          {/* 进度视图覆盖层 - 改为 Inline 模式，不再显示遮罩 */}
+          {/* {
             showProgressView && pipelineProgress && (
               <PipelineProgressView
                 progress={pipelineProgress}
@@ -2307,7 +2333,7 @@ const App: React.FC = () => {
                 }}
               />
             )
-          }
+          } */}
         </div >
       );
     }

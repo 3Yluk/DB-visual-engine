@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { Icons } from './Icons';
-import { configureClient, configureModels, listVolcengineModels } from '../services/geminiService';
+import { configureClient, configureModels, listVolcengineModels, saveModelConfigForMode, loadModelConfigForMode, getModeDefaultModels } from '../services/geminiService';
 import { GoogleGenAI } from '@google/genai';
 
 interface ApiKeyModalProps {
@@ -44,52 +43,34 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
   useEffect(() => {
     if (isOpen) {
       // Load API mode
-      const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
+      const storedMode = (localStorage.getItem('unimage_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
       setApiMode(storedMode);
 
       // Load keys from separate storage (with fallback to legacy)
-      const legacyKey = localStorage.getItem('berryxia_api_key') || process.env.GEMINI_API_KEY || '';
+      const legacyKey = localStorage.getItem('unimage_api_key') || process.env.GEMINI_API_KEY || '';
 
-      const storedOfficialKey = localStorage.getItem('berryxia_api_key_official') || (storedMode === 'official' ? legacyKey : '');
-      const storedCustomKey = localStorage.getItem('berryxia_api_key_custom') || (storedMode === 'custom' ? legacyKey : '');
-      const storedVolcengineKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
+      const storedOfficialKey = localStorage.getItem('unimage_api_key_official') || (storedMode === 'official' ? legacyKey : '');
+      const storedCustomKey = localStorage.getItem('unimage_api_key_custom') || (storedMode === 'custom' ? legacyKey : '');
+      const storedVolcengineKey = localStorage.getItem('unimage_api_key_volcengine') || '';
 
       setOfficialKey(storedOfficialKey);
       setCustomKey(storedCustomKey);
       setVolcengineKey(storedVolcengineKey);
 
-      const storedUrl = localStorage.getItem('berryxia_base_url') || process.env.API_ENDPOINT || 'http://127.0.0.1:8045';
+      const storedUrl = localStorage.getItem('unimage_base_url') || process.env.API_ENDPOINT || 'http://127.0.0.1:8045';
       setBaseUrl(storedUrl);
 
-      // Load Models - different defaults for official vs custom vs volcengine
-      let defaultReasoning = 'gemini-3-pro-high';
-      let defaultFast = 'gemini-3-flash';
-      let defaultImage = 'gemini-3-pro-image';
+      // Load Models - use mode-specific config with proper defaults
+      const modelConfig = loadModelConfigForMode(storedMode);
 
-      if (storedMode === 'official') {
-        defaultReasoning = 'gemini-3-flash-preview';
-        defaultFast = 'gemini-3-flash-preview';
-        defaultImage = 'gemini-3-pro-image-preview';
-      } else if (storedMode === 'volcengine') {
-        // Volcengine specific defaults
-        defaultReasoning = 'gemini-3-pro-high'; // Fallback to reasoning? Or user didn't specify. Keep Gemini for text.
-        defaultFast = 'gemini-3-flash';
-        defaultImage = 'seedream-4-5-251128'; // User provided model
-      }
+      // For Volcengine, also check the vision model
+      const v = localStorage.getItem(`unimage_model_vision_${storedMode}`)
+        || localStorage.getItem('unimage_model_vision')
+        || 'seed-1-6-250915';
 
-      const r = localStorage.getItem('berryxia_model_reasoning') || defaultReasoning;
-      const f = localStorage.getItem('berryxia_model_fast') || defaultFast;
-      let i = localStorage.getItem('berryxia_model_image') || defaultImage;
-
-      // Fix broken imagen model in official mode
-      if (storedMode === 'official' && i === 'imagen-3.0-generate-001') {
-        i = 'gemini-3-pro-image-preview';
-      }
-
-      const v = localStorage.getItem('berryxia_model_vision') || 'seed-1-6-250915';
-      setReasoningModel(r);
-      setFastModel(f);
-      setImageModel(i);
+      setReasoningModel(modelConfig.reasoning);
+      setFastModel(modelConfig.fast);
+      setImageModel(modelConfig.image);
       setVisionModel(v);
     }
   }, [isOpen]);
@@ -243,31 +224,33 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose }) => 
 
   const handleSave = () => {
     if (apiMode === 'custom' && !baseUrl) return;
-    // Note: We allow saving even if one key is empty, as long as the current mode's key is valid? 
-    // Or just save everything.
 
-    // Save API mode
-    localStorage.setItem('berryxia_api_mode', apiMode);
-    localStorage.setItem('berryxia_base_url', baseUrl);
+    // Save API mode and base URL
+    localStorage.setItem('unimage_api_mode', apiMode);
+    localStorage.setItem('unimage_base_url', baseUrl);
 
     // Save Keys Separately
-    localStorage.setItem('berryxia_api_key_official', officialKey);
-    localStorage.setItem('berryxia_api_key_custom', customKey);
-    localStorage.setItem('berryxia_api_key_volcengine', volcengineKey);
+    localStorage.setItem('unimage_api_key_official', officialKey);
+    localStorage.setItem('unimage_api_key_custom', customKey);
+    localStorage.setItem('unimage_api_key_volcengine', volcengineKey);
 
-    // Legacy support (optional, but good for safety)
-    localStorage.setItem('berryxia_api_key', currentKey);
+    // Legacy support
+    localStorage.setItem('unimage_api_key', currentKey);
 
-    // Save Models
-    localStorage.setItem('berryxia_model_reasoning', reasoningModel);
-    localStorage.setItem('berryxia_model_fast', fastModel);
-    localStorage.setItem('berryxia_model_image', imageModel);
-    localStorage.setItem('berryxia_model_vision', visionModel);
+    // Save Models with mode-specific keys (fixes config pollution between modes)
+    saveModelConfigForMode(apiMode, {
+      reasoning: reasoningModel,
+      fast: fastModel,
+      image: imageModel,
+      vision: visionModel
+    });
 
+    // Reconfigure the service (no reload needed!)
     configureClient(currentKey, baseUrl, apiMode);
     configureModels({ reasoning: reasoningModel, fast: fastModel, image: imageModel });
 
-    window.location.reload(); // Reload to ensure global state freshness
+    // Close modal instead of reloading page
+    onClose();
   };
 
   return (

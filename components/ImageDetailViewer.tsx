@@ -173,19 +173,19 @@ export const ImageDetailViewer: React.FC<ImageDetailViewerProps> = ({
                                 </button>
                             )}
 
-                            {/* 顶部信息栏 */}
+                            {/* 顶部信息栏 - 添加 pointer-events-none 防止遮挡图片点击 */}
                             {(canNavigate || showActions) && (
-                                <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent z-10">
+                                <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent z-10 pointer-events-none">
                                     {/* 计数器 */}
                                     {canNavigate && (
-                                        <div className="px-4 py-2 bg-black/20 backdrop-blur-md rounded-full text-white/50 text-xs font-mono">
+                                        <div className="px-4 py-2 bg-black/20 backdrop-blur-md rounded-full text-white/50 text-xs font-mono pointer-events-auto">
                                             {currentIndex + 1} / {images.length}
                                         </div>
                                     )}
 
                                     {/* 操作按钮 */}
                                     {showActions && (
-                                        <div className="flex gap-2 ml-auto">
+                                        <div className="flex gap-2 ml-auto pointer-events-auto">
                                             {onAddToComparison && (
                                                 <button
                                                     onClick={onAddToComparison}

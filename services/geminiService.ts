@@ -20,9 +20,40 @@ let currentConfig = { apiKey: '', baseUrl: '', mode: 'custom' as 'official' | 'c
 
 // Default Model Configuration
 let modelConfig = {
-  reasoning: "gemini-3-flash-preview",
-  fast: "gemini-3-flash-preview",
+  reasoning: "gemini-3-flash",
+  fast: "gemini-3-flash",
   image: "gemini-3-pro-image-preview"
+};
+
+const FALLBACK_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.0-flash-exp'
+];
+
+// Centralized default models per API mode
+export const getModeDefaultModels = (mode: 'official' | 'custom' | 'volcengine') => {
+  switch (mode) {
+    case 'official':
+      return {
+        reasoning: 'gemini-3-flash-preview',
+        fast: 'gemini-3-flash-preview',
+        image: 'gemini-3-pro-image-preview'
+      };
+    case 'volcengine':
+      return {
+        reasoning: 'seed-1-6-250915',      // Vision model for analysis
+        fast: 'seed-1-6-250915',           // Vision model for chat
+        image: 'seedream-4-5-251128'       // Image generation model
+      };
+    case 'custom':
+    default:
+      return {
+        reasoning: 'gemini-3-pro-high',
+        fast: 'gemini-3-flash',
+        image: 'gemini-3-pro-image'
+      };
+  }
 };
 
 const translateErrorMessage = (error: any): string => {
@@ -56,9 +87,9 @@ const translateErrorMessage = (error: any): string => {
     msg.includes("exhausted") || msg.includes("quota") || msg.includes("Too Many Requests")) {
     const resetTime = extractResetTime(msg);
     if (resetTime) {
-      return `图片生成额度已用完，预计 ${resetTime}后恢复 (429)`;
+      return `API 请求额度已用完，预计 ${resetTime}后恢复 (429)`;
     }
-    return "图片生成额度已用完，请稍后再试 (429 Quota Exceeded)";
+    return "API 请求额度已用完，通常是 Key 额度耗尽 (429 Quota Exceeded)";
   }
 
   // Specific 400 error translation for invalid image format/base64 issues
@@ -141,14 +172,67 @@ export const configureModels = (config: { reasoning?: string; fast?: string; ima
 };
 
 const initModelsFromStorage = () => {
-  const r = localStorage.getItem('berryxia_model_reasoning');
-  const f = localStorage.getItem('berryxia_model_fast');
-  const i = localStorage.getItem('berryxia_model_image');
+  const storedMode = (localStorage.getItem('unimage_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
+  const defaults = getModeDefaultModels(storedMode);
 
-  if (r || f || i) {
-    configureModels({ reasoning: r || undefined, fast: f || undefined, image: i || undefined });
+  // Try mode-specific keys first, fallback to global keys for backward compatibility
+  let r = localStorage.getItem(`unimage_model_reasoning_${storedMode}`)
+    || localStorage.getItem('unimage_model_reasoning');
+  let f = localStorage.getItem(`unimage_model_fast_${storedMode}`)
+    || localStorage.getItem('unimage_model_fast');
+  let i = localStorage.getItem(`unimage_model_image_${storedMode}`)
+    || localStorage.getItem('unimage_model_image');
+
+  // Validate: Ensure models are compatible with current mode
+  if (storedMode === 'volcengine') {
+    // If the stored models look like Gemini models, reset to Volcengine defaults
+    if (!r || r.includes('gemini')) r = defaults.reasoning;
+    if (!f || f.includes('gemini')) f = defaults.fast;
+    if (!i || i.includes('gemini') || i.includes('imagen')) i = defaults.image;
+    console.log('[Model Init] Volcengine mode: using', { reasoning: r, fast: f, image: i });
+  } else {
+    // If the stored models look like Volcengine models, reset to Google defaults
+    if (!r || r.includes('seed')) r = defaults.reasoning;
+    if (!f || f.includes('seed')) f = defaults.fast;
+    if (!i || i.includes('seedream') || i.includes('seededit')) i = defaults.image;
   }
+
+  configureModels({
+    reasoning: r || defaults.reasoning,
+    fast: f || defaults.fast,
+    image: i || defaults.image
+  });
 };
+
+// Export helper for saving mode-specific model config
+export const saveModelConfigForMode = (
+  mode: 'official' | 'custom' | 'volcengine',
+  config: { reasoning?: string; fast?: string; image?: string; vision?: string }
+) => {
+  if (config.reasoning) localStorage.setItem(`unimage_model_reasoning_${mode}`, config.reasoning);
+  if (config.fast) localStorage.setItem(`unimage_model_fast_${mode}`, config.fast);
+  if (config.image) localStorage.setItem(`unimage_model_image_${mode}`, config.image);
+  if (config.vision) localStorage.setItem(`unimage_model_vision_${mode}`, config.vision);
+
+  // Also update global keys for backward compatibility
+  if (config.reasoning) localStorage.setItem('unimage_model_reasoning', config.reasoning);
+  if (config.fast) localStorage.setItem('unimage_model_fast', config.fast);
+  if (config.image) localStorage.setItem('unimage_model_image', config.image);
+  if (config.vision) localStorage.setItem('unimage_model_vision', config.vision);
+};
+
+// Export helper for loading mode-specific model config
+export const loadModelConfigForMode = (mode: 'official' | 'custom' | 'volcengine') => {
+  const defaults = getModeDefaultModels(mode);
+
+  return {
+    reasoning: localStorage.getItem(`unimage_model_reasoning_${mode}`) || defaults.reasoning,
+    fast: localStorage.getItem(`unimage_model_fast_${mode}`) || defaults.fast,
+    image: localStorage.getItem(`unimage_model_image_${mode}`) || defaults.image,
+    vision: localStorage.getItem(`unimage_model_vision_${mode}`) || 'seed-1-6-250915'
+  };
+};
+
 
 // Initialize with env vars if available
 // Initialize with env vars if available - MOVED to getClient fallback
@@ -156,13 +240,13 @@ initModelsFromStorage();
 
 const getClient = () => {
   if (!ai) {
-    const storedUrl = localStorage.getItem('berryxia_base_url');
-    const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
+    const storedUrl = localStorage.getItem('unimage_base_url');
+    const storedMode = (localStorage.getItem('unimage_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
 
     let storedKey = '';
-    if (storedMode === 'official') storedKey = localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key') || '';
-    else if (storedMode === 'volcengine') storedKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
-    else storedKey = localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key') || '';
+    if (storedMode === 'official') storedKey = localStorage.getItem('unimage_api_key_official') || localStorage.getItem('unimage_api_key') || '';
+    else if (storedMode === 'volcengine') storedKey = localStorage.getItem('unimage_api_key_volcengine') || '';
+    else storedKey = localStorage.getItem('unimage_api_key_custom') || localStorage.getItem('unimage_api_key') || '';
 
     if (storedKey) {
       configureClient(storedKey, storedUrl || '', storedMode);
@@ -180,13 +264,13 @@ const getClient = () => {
 const ensureConfigLoaded = () => {
   if (currentConfig.apiKey) return; // Already configured
 
-  const storedUrl = localStorage.getItem('berryxia_base_url');
-  const storedMode = (localStorage.getItem('berryxia_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
+  const storedUrl = localStorage.getItem('unimage_base_url');
+  const storedMode = (localStorage.getItem('unimage_api_mode') || 'custom') as 'official' | 'custom' | 'volcengine';
 
   let storedKey = '';
-  if (storedMode === 'official') storedKey = localStorage.getItem('berryxia_api_key_official') || localStorage.getItem('berryxia_api_key') || '';
-  else if (storedMode === 'volcengine') storedKey = localStorage.getItem('berryxia_api_key_volcengine') || '';
-  else storedKey = localStorage.getItem('berryxia_api_key_custom') || localStorage.getItem('berryxia_api_key') || '';
+  if (storedMode === 'official') storedKey = localStorage.getItem('unimage_api_key_official') || localStorage.getItem('unimage_api_key') || '';
+  else if (storedMode === 'volcengine') storedKey = localStorage.getItem('unimage_api_key_volcengine') || '';
+  else storedKey = localStorage.getItem('unimage_api_key_custom') || localStorage.getItem('unimage_api_key') || '';
 
   if (storedKey) {
     // Only update currentConfig, don't initialize Google client for Volcengine
@@ -211,7 +295,7 @@ async function volcengineVisionCall(
     },
     body: JSON.stringify({
       // Use user-selected vision model from localStorage, with fallback to default
-      model: localStorage.getItem('berryxia_model_vision') || "seed-1-6-250915",
+      model: localStorage.getItem('unimage_model_vision') || "seed-1-6-250915",
       messages: [{
         role: "user",
         content: [
@@ -507,7 +591,7 @@ ${originalPrompt}
         return result || originalPrompt;
       } else {
         // Text-only refinement via chat API
-        const visionModel = localStorage.getItem('berryxia_model_vision') || 'seed-1-6-250915';
+        const visionModel = localStorage.getItem('unimage_model_vision') || 'seed-1-6-250915';
         const response = await fetch("/api/volcengine-chat", {
           method: "POST",
           headers: {
@@ -863,19 +947,48 @@ export async function executeReverseEngineering(
       console.log("[Volcengine] Executing reverse engineering with Doubao Vision");
       content = await volcengineVisionCall(imageBase64, promptScript, mimeType);
     } else {
-      // GOOGLE MODE: Use Gemini API
+      // GOOGLE MODE: Use Gemini API with Fallback strategy
       const client = getClient();
-      const modelId = modelConfig.reasoning;
+      const initialModel = modelConfig.reasoning;
+      // Prepare candidate list (primary + fallbacks)
+      const modelsToTry = [initialModel, ...FALLBACK_MODELS.filter(m => m !== initialModel)];
 
       const cleanImage = imageBase64.replace(/^data:image\/\w+;base64,/, "");
-      const response = await client.models.generateContent({
-        model: modelId,
-        contents: [
-          { inlineData: { mimeType, data: cleanImage } },
-          promptScript
-        ]
-      });
-      content = response.text || "";
+
+      let lastErr: any = null;
+      let success = false;
+
+      for (const modelId of modelsToTry) {
+        try {
+          // console.debug(`Attempting reverse engineering with ${modelId}...`);
+          const response = await client.models.generateContent({
+            model: modelId,
+            contents: [
+              { inlineData: { mimeType, data: cleanImage } },
+              promptScript
+            ]
+          });
+          content = response.text || "";
+          if (!content) throw new Error("Empty response from AI");
+
+          if (modelId !== initialModel) console.warn(`Fallback mechanism: Successfully switched to ${modelId}`);
+          success = true;
+          break;
+        } catch (err: any) {
+          lastErr = err;
+          const msg = String(err?.message || err);
+          // Only retry on network/server/quota errors
+          const isRetryable = msg.includes('429') || msg.includes('404') || msg.includes('500') || msg.includes('503') || msg.includes('Overloaded') || msg.includes('fetch');
+
+          if (!isRetryable) break; // Don't retry auth errors (401) or 400
+
+          console.warn(`Model ${modelId} failed (${msg.substring(0, 50)}...), trying next fallback...`);
+        }
+      }
+
+      if (!success) {
+        throw lastErr;
+      }
     }
 
     // Clean JSON block
@@ -887,7 +1000,13 @@ export async function executeReverseEngineering(
       throw new Error("Failed to parse AI response as JSON. Content: " + content.substring(0, 100) + "...");
     }
   } catch (error: any) {
-    console.error("Reverse engineering failed:", error);
+    // Reduce noise: Warn for anticipated API errors, Error for unexpected crashes
+    const errStr = String(error?.message || error);
+    if (errStr.includes("429") || errStr.includes("401") || errStr.includes("Exhausted")) {
+      console.warn("Reverse engineering API Limit:", errStr);
+    } else {
+      console.error("Reverse engineering failed:", error);
+    }
     // Translate error (e.g. 429) so App.tsx can display friendly message
     const userMsg = translateErrorMessage(error);
     throw new Error(userMsg);

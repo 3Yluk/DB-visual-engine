@@ -10,8 +10,8 @@ export interface PromptVersion {
 
 export type PromptLibrary = Record<string, PromptVersion[]>;
 
-const STORAGE_KEY = 'berryxia_prompt_versions';
-const ACTIVE_KEY_PREFIX = 'berryxia_active_version_';
+const STORAGE_KEY = 'unimage_prompt_versions';
+const ACTIVE_KEY_PREFIX = 'unimage_active_version_';
 
 // Virtual role for Reverse Engineering skill
 export const REVERSE_SKILL_ID = 'REVERSE_SKILL';
