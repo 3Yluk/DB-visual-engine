@@ -481,8 +481,8 @@ export async function refinePromptWithFeedback(
   refImage?: string | null,
   mimeType: string = "image/jpeg"
 ): Promise<string> {
-  const client = getClient();
-  const modelId = modelConfig.fast;
+  ensureConfigLoaded(); // Ensure config is loaded before mode check
+
   const textPrompt = `你是一个提示词优化专家。根据用户的修改意见，结合现有提示词${refImage ? "和参考图片" : ""}，输出改进后的完整提示词。
 
 **用户修改意见：**
@@ -497,6 +497,47 @@ ${originalPrompt}
 3. 根据修改意见进行针对性调整`;
 
   try {
+    // VOLCENGINE MODE: Use Chat API for text refinement
+    if (currentConfig.mode === 'volcengine') {
+      console.log("[Volcengine] Refining prompt with feedback");
+
+      if (refImage) {
+        // Use vision call with image
+        const result = await volcengineVisionCall(refImage, textPrompt, mimeType);
+        return result || originalPrompt;
+      } else {
+        // Text-only refinement via chat API
+        const visionModel = localStorage.getItem('berryxia_model_vision') || 'seed-1-6-250915';
+        const response = await fetch("/api/volcengine-chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${currentConfig.apiKey}`
+          },
+          body: JSON.stringify({
+            model: visionModel,
+            messages: [{ role: "user", content: textPrompt }],
+            max_tokens: 4096
+          })
+        });
+
+        if (!response.ok) {
+          console.error("Volcengine refine error:", response.status);
+          return originalPrompt;
+        }
+
+        const data = await response.json();
+        if (data.choices && data.choices.length > 0) {
+          return data.choices[0].message?.content || originalPrompt;
+        }
+        return originalPrompt;
+      }
+    }
+
+    // GOOGLE MODE: Use Gemini API
+    const client = getClient();
+    const modelId = modelConfig.fast;
+
     let response;
     if (refImage) {
       const cleanRef = refImage.replace(/^data:image\/\w+;base64,/, "");

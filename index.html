@@ -72,6 +72,24 @@
     .animate-pulse-orange {
       animation: pulse-orange 2s infinite;
     }
+
+    /* Prevent image selection and the gray overlay effect */
+    img {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: auto;
+    }
+
+    /* Also prevent selection on image containers */
+    .image-container,
+    .image-preview,
+    .comparison-slider {
+      -webkit-user-select: none;
+      user-select: none;
+    }
   </style>
   <script type="importmap">
 {
