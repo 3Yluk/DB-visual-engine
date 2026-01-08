@@ -453,7 +453,10 @@ const App: React.FC = () => {
     // 2. Set selected index & Display Image (High Priority UI Update)
     // 优先更新 UI，让用户感觉到操作立即响应
     setSelectedHistoryIndex(index);
-    setDisplayImage(getImageSrc(historyItem.originalImage, historyItem.mimeType));
+    // 在对比模式下，不更新 displayImage（左侧图），实现“锁定左侧，右侧切换”的扫描体验
+    if (!isComparisonMode) {
+      setDisplayImage(getImageSrc(historyItem.originalImage, historyItem.mimeType));
+    }
 
     // 3. Restore state (Deferred Update using startTransition)
     // 使用 startTransition 标记为低优先级更新，确保 UI 响应流畅
@@ -566,6 +569,15 @@ const App: React.FC = () => {
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, [isGalleryOpen, isHelpOpen, isKeyModalOpen, fullscreenImg]);
+
+  // Sync displayImage when exiting comparison mode (恢复显示当前选中的图片的原始图)
+  useEffect(() => {
+    if (!isComparisonMode && state.history.length > 0) {
+      const item = state.history[state.selectedHistoryIndex];
+      if (item) setDisplayImage(getImageSrc(item.originalImage, item.mimeType));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isComparisonMode]); // 仅在模式切换时执行，避免普通切换时的冗余更新
 
   const showToast = (message: string, type: ToastType = 'info') => {
     const id = Date.now().toString();
