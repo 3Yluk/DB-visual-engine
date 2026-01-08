@@ -230,7 +230,6 @@ const App: React.FC = () => {
   const [selectedRefineMode, setSelectedRefineMode] = useState<RefineModeConfig>('optimize-auto');
   const [isRefineMenuOpen, setIsRefineMenuOpen] = useState(false);
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   const [refineMenuPosition, setRefineMenuPosition] = useState({ top: 0, left: 0 });
   const refineButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -2538,7 +2537,12 @@ const App: React.FC = () => {
                   onDelete={() => handleDeleteHistoryItem(index)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setContextMenu({ x: e.clientX, y: e.clientY, index });
+                    // Directly add to comparison mode without showing menu
+                    const imgUrl = getOriginalFromHistory(state.history, index);
+                    setDisplayImage(imgUrl);
+                    setIsComparisonMode(true);
+                    loadHistoryItem(index);
+                    showToast(t('gallery.addedToComparisonLeft'), 'success');
                   }}
                 />
               </div>
@@ -2546,31 +2550,6 @@ const App: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Context Menu */}
-      {contextMenu && (
-        <>
-          <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
-          <div
-            className="fixed z-50 bg-stone-800 border border-stone-700 rounded-lg shadow-xl overflow-hidden min-w-[160px] animate-in fade-in zoom-in-95 duration-100"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-          >
-            <button
-              onClick={() => {
-                const imgUrl = getOriginalFromHistory(state.history, contextMenu.index);
-                setDisplayImage(imgUrl);
-                setIsComparisonMode(true);
-                setContextMenu(null);
-                showToast(t('gallery.addedToComparisonLeft'), 'success');
-              }}
-              className="w-full text-left px-4 py-2.5 hover:bg-stone-700 cursor-pointer text-xs text-stone-300 hover:text-white flex items-center gap-2 transition-colors"
-            >
-              <Icons.Columns size={14} />
-              <span>{t('gallery.addToComparison')}</span>
-            </button>
-          </div>
-        </>
-      )}
     </div>
   );
 };
