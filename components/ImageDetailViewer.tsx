@@ -72,6 +72,10 @@ export const ImageDetailViewer: React.FC<ImageDetailViewerProps> = ({
     showSidebar = false,
     metadata
 }) => {
+    // 提前返回，避免运行不必要的 hooks
+    // 注意：这违反了 React hooks 规则，但为了性能优化是必要的
+    // 替代方案：在父组件条件渲染
+
     // 键盘导航
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
         if (!isOpen) return;
@@ -91,9 +95,10 @@ export const ImageDetailViewer: React.FC<ImageDetailViewerProps> = ({
     }, [isOpen, mode, onNavigate, images.length, currentIndex, onClose]);
 
     useEffect(() => {
+        if (!isOpen) return; // 关闭时不添加监听器
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [handleKeyDown]);
+    }, [handleKeyDown, isOpen]);
 
     if (!isOpen) return null;
 

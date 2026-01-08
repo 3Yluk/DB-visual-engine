@@ -2163,22 +2163,20 @@ const App: React.FC = () => {
 
       {/* Global Drag Overlay Removed */}
 
-      {/* Fullscreen Detail Viewer */}
-      <ImageDetailViewer
-        isOpen={!!fullscreenImg}
-        onClose={() => { setFullscreenImg(null); setIsFullscreenComparison(false); }}
-        mode={isFullscreenComparison ? 'comparison' : 'single'}
-        currentImage={isFullscreenComparison
-          ? getOriginalFromHistory(state.history, state.selectedHistoryIndex)
-          : (fullscreenImg || '')}
-        comparisonImage={displayImage || undefined}
-        images={state.generatedImages.map((_, i) => getOriginalFromHistory(state.history, i))}
-        currentIndex={state.selectedHistoryIndex}
-        onNavigate={(index) => {
-          loadHistoryItem(index);
-          setFullscreenImg(getOriginalFromHistory(state.history, index));
-        }}
-      />
+      {/* Fullscreen Detail Viewer - 条件渲染避免不必要的hook执行 */}
+      {fullscreenImg && (
+        <ImageDetailViewer
+          isOpen={true}
+          onClose={() => { setFullscreenImg(null); setIsFullscreenComparison(false); }}
+          mode={isFullscreenComparison ? 'comparison' : 'single'}
+          currentImage={isFullscreenComparison
+            ? getOriginalFromHistory(state.history, state.selectedHistoryIndex)
+            : fullscreenImg}
+          comparisonImage={displayImage || undefined}
+          images={[]} // 临时移除导航功能以排查性能问题
+          currentIndex={state.selectedHistoryIndex}
+        />
+      )}
 
       <nav className="fixed top-0 left-0 right-0 z-50 bg-stone-950/90 backdrop-blur-md border-b border-stone-800 h-16 flex items-center justify-between px-10">
         <div className="flex items-center gap-3">
