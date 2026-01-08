@@ -333,6 +333,12 @@ const App: React.FC = () => {
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1'); // 选择的比例
   const [is4K, setIs4K] = useState(false); // 是否启用 4K 画质
   const mainRef = useRef<HTMLElement>(null);
+  const historyRef = useRef(state.history); // 用于 useEffect 回调中访问最新 history
+
+  // 保持 historyRef 同步
+  useEffect(() => {
+    historyRef.current = state.history;
+  }, [state.history]);
 
   // Save panel width to localStorage
   useEffect(() => {
@@ -478,12 +484,12 @@ const App: React.FC = () => {
         if (newIndex !== state.selectedHistoryIndex) {
           loadHistoryItem(newIndex);
           // Update fullscreen image if in fullscreen mode
-          if (fullscreenImg && state.history[newIndex]) {
+          if (fullscreenImg && historyRef.current[newIndex]) {
             if (isFullscreenComparison) {
               // For comparison mode, keep the current mode but update the index
               // The image will be updated via selectedHistoryIndex
             } else {
-              setFullscreenImg(getOriginalFromHistory(state.history, newIndex));
+              setFullscreenImg(getOriginalFromHistory(historyRef.current, newIndex));
             }
           }
         }
@@ -492,12 +498,12 @@ const App: React.FC = () => {
         if (newIndex !== state.selectedHistoryIndex) {
           loadHistoryItem(newIndex);
           // Update fullscreen image if in fullscreen mode
-          if (fullscreenImg && state.history[newIndex]) {
+          if (fullscreenImg && historyRef.current[newIndex]) {
             if (isFullscreenComparison) {
               // For comparison mode, keep the current mode but update the index
               // The image will be updated via selectedHistoryIndex
             } else {
-              setFullscreenImg(getOriginalFromHistory(state.history, newIndex));
+              setFullscreenImg(getOriginalFromHistory(historyRef.current, newIndex));
             }
           }
         }
@@ -505,7 +511,7 @@ const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state.generatedImages.length, state.selectedHistoryIndex, state.history, fullscreenImg, isFullscreenComparison]);
+  }, [state.generatedImages.length, state.selectedHistoryIndex, fullscreenImg, isFullscreenComparison]);
 
 
   // Keyboard shortcuts
