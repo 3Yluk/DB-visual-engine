@@ -41,6 +41,8 @@ import { AspectRatioSelector } from './components/AspectRatioSelector';
 import ReactMarkdown from 'react-markdown';
 import { extractPromptFromPng, embedPromptInPng } from './utils/pngMetadata';
 import { generateThumbnail } from './utils/thumbnailUtils';
+import { PromptDiffView } from './components/PromptDiffView';
+import { hasSignificantDiff } from './utils/promptDiff';
 
 const INITIAL_RESULTS = {
   [AgentRole.AUDITOR]: { role: AgentRole.AUDITOR, content: '', isStreaming: false, isComplete: false },
@@ -108,6 +110,7 @@ const App: React.FC = () => {
   const [apiMode, setApiMode] = useState<'official' | 'custom'>('custom');
   const [activeModelName, setActiveModelName] = useState('Gemini 3.0 Flash'); // Default display
   const [isMentionMenuOpen, setIsMentionMenuOpen] = useState(false);
+  const [hoveredHistoryIndex, setHoveredHistoryIndex] = useState<number | null>(null);
 
   // Consolidate initialization logic
   useEffect(() => {
@@ -1414,24 +1417,63 @@ const App: React.FC = () => {
                         {state.promptHistory.length}
                       </button>
                       {isHistoryDropdownOpen && (
-                        <div className="absolute top-full right-0 mt-1 w-64 bg-stone-800 border border-stone-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
-                          {state.promptHistory.map((entry, idx) => {
+                        <div
+                          className="absolute top-full right-0 mt-1 flex gap-2 z-50"
+                          onMouseLeave={() => setHoveredHistoryIndex(null)}
+                        >
+                          {/* Diff Preview Panel */}
+                          {hoveredHistoryIndex !== null && (() => {
+                            const entry = state.promptHistory[hoveredHistoryIndex];
                             const lines = entry.split('\n');
-                            const header = lines[0];
+                            const oldContent = lines.slice(1).join('\n');
+                            const hasDiff = hasSignificantDiff(oldContent, state.editablePrompt);
+
+                            if (!hasDiff) return null;
+
                             return (
-                              <div
-                                key={idx}
-                                onClick={() => {
-                                  const content = lines.slice(1).join('\n');
-                                  setState(prev => ({ ...prev, editablePrompt: content }));
-                                  setIsHistoryDropdownOpen(false);
-                                }}
-                                className="px-3 py-2 hover:bg-stone-700 cursor-pointer text-[10px] border-b border-stone-700 last:border-b-0"
-                              >
-                                <span className="font-bold text-amber-500">{header}</span>
+                              <div className="w-80 bg-stone-900 border border-stone-700 rounded-lg shadow-xl p-3 max-h-64 overflow-y-auto">
+                                <div className="text-[9px] font-bold text-stone-500 uppercase mb-2 flex items-center gap-1">
+                                  <Icons.GitCompare size={10} />
+                                  差异预览
+                                </div>
+                                <PromptDiffView
+                                  oldPrompt={oldContent}
+                                  newPrompt={state.editablePrompt}
+                                  className="text-[11px] leading-relaxed"
+                                />
                               </div>
                             );
-                          })}
+                          })()}
+
+                          {/* History List */}
+                          <div className="w-64 bg-stone-800 border border-stone-700 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                            {state.promptHistory.map((entry, idx) => {
+                              const lines = entry.split('\n');
+                              const header = lines[0];
+                              const content = lines.slice(1).join('\n');
+                              const hasDiff = hasSignificantDiff(content, state.editablePrompt);
+
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => {
+                                    setState(prev => ({ ...prev, editablePrompt: content }));
+                                    setIsHistoryDropdownOpen(false);
+                                    setHoveredHistoryIndex(null);
+                                  }}
+                                  onMouseEnter={() => setHoveredHistoryIndex(idx)}
+                                  className={`px-3 py-2 hover:bg-stone-700 cursor-pointer text-[10px] border-b border-stone-700 last:border-b-0 flex items-center justify-between ${hoveredHistoryIndex === idx ? 'bg-stone-700' : ''}`}
+                                >
+                                  <span className="font-bold text-amber-500">{header}</span>
+                                  {hasDiff && (
+                                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-violet-900/50 text-violet-400">
+                                      有差异
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1553,10 +1595,10 @@ const App: React.FC = () => {
                   onClick={() => (state.image || state.generatedImage) && setIsMentionMenuOpen(!isMentionMenuOpen)}
                   disabled={!state.image && !state.generatedImage}
                   className={`flex items-center justify-center px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${!state.image && !state.generatedImage
-                      ? 'bg-stone-900 text-stone-600 border-stone-800 cursor-not-allowed opacity-50'
-                      : isMentionMenuOpen
-                        ? 'bg-amber-900/40 text-amber-400 border-amber-500/30'
-                        : 'bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-amber-400 border-transparent'
+                    ? 'bg-stone-900 text-stone-600 border-stone-800 cursor-not-allowed opacity-50'
+                    : isMentionMenuOpen
+                      ? 'bg-amber-900/40 text-amber-400 border-amber-500/30'
+                      : 'bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-amber-400 border-transparent'
                     }`}
                   title={state.image || state.generatedImage ? "引用图片" : "请先上传或生成图片"}
                 >

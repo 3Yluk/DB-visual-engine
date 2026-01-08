@@ -58,6 +58,7 @@ import {
     LayoutGrid,
     FolderOpen,
     Columns,
+    GitCompare,
     LucideProps
 } from 'lucide-react';
 
@@ -119,5 +120,6 @@ export const Icons = {
     LayoutGrid: createIcon(LayoutGrid),
     FolderOpen: createIcon(FolderOpen),
     Reverse: createIcon(ArrowLeftRight),
-    Columns: createIcon(Columns)
+    Columns: createIcon(Columns),
+    GitCompare: createIcon(GitCompare)
 };
