@@ -13,6 +13,7 @@ import { AgentCard } from './components/AgentCard';
 import { ImageViewer } from './components/ImageViewer';
 import { ImageComparisonSlider } from './components/ImageComparisonSlider';
 import { HistoryThumbnail } from './components/HistoryThumbnail';
+import { ReferenceImageList } from './components/ReferenceImageList';
 import { ToastContainer } from './components/Toast';
 import { useToast } from './hooks/useToast';
 import { StorageIndicator } from './components/StorageIndicator';
@@ -45,7 +46,7 @@ import { DocumentationModal } from './components/DocumentationModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { PromptLabModal } from './components/PromptLabModal';
 import { GalleryModal } from './components/GalleryModal';
-import { PromptStudio } from './components/PromptStudio';
+import { AspectRatioSelector } from './components/AspectRatioSelector';
 import ReactMarkdown from 'react-markdown';
 import { extractPromptFromPng, embedPromptInPng } from './utils/pngMetadata';
 import { generateThumbnail } from './utils/thumbnailUtils';
@@ -56,6 +57,10 @@ import { INITIAL_STATE, INITIAL_RESULTS } from './constants/appState';
 import { getImageSrc, getOriginalFromHistory } from './utils/imageHelpers';
 import { parseSuggestions } from './utils/parseSuggestions';
 import { ImageZoomState } from './utils/zoom';
+import { PromptStudio } from './components/PromptStudio';
+import { AgentWorkbench } from './components/AgentWorkbench';
+import { ChatSidebar } from './components/ChatSidebar';
+import { MainVisualizer } from './components/MainVisualizer';
 
 
 
@@ -78,6 +83,35 @@ const App: React.FC = () => {
   // App Initialization (History, Cache)
   useAppInitialization(setState, setDisplayImage, setShowLanding);
 
+  // const [isApiDropdownOpen, setIsApiDropdownOpen] = useState(false); // MOVED TO PROMPT STUDIO
+  // const [isMentionMenuOpen, setIsMentionMenuOpen] = useState(false); // MOVED TO PROMPT STUDIO
+  const [hoveredHistoryIndex, setHoveredHistoryIndex] = useState<number | null>(null);
+
+  const handleSetApiMode = (targetMode: 'official' | 'custom' | 'volcengine') => {
+    setApiMode(targetMode);
+    const modeLabels: Record<string, string> = {
+      official: '官方 API',
+      custom: '自定义',
+      volcengine: '火山引擎'
+    };
+    showToast(`已切换到 ${modeLabels[targetMode] || targetMode} 模式`, 'success');
+    // setIsApiDropdownOpen(false); // MOVED
+  };
+
+  const handleSwitchApiMode = () => {
+    const nextMode = switchApiMode();
+    const modeLabels: Record<string, string> = {
+      official: '官方 API',
+      custom: '自定义',
+      volcengine: '火山引擎'
+    };
+    showToast(`已切换到 ${modeLabels[nextMode] || nextMode} 模式`, 'success');
+    // setIsApiDropdownOpen(false); // MOVED
+  };
+
+
+
+  const [refinementInput, setRefinementInput] = useState('');
   const [fullscreenImg, setFullscreenImg] = useState<string | null>(null);
   const [isFullscreenComparison, setIsFullscreenComparison] = useState(false);
   const [isComparisonMode, setIsComparisonMode] = useState(() => {
@@ -89,26 +123,29 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('unimage_comparison_mode', JSON.stringify(isComparisonMode));
   }, [isComparisonMode]);
-
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [isPromptLabOpen, setIsPromptLabOpen] = useState(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [currentLang, setCurrentLang] = useState<'CN' | 'EN'>('CN');
-
-  // Chat state
+  const [isHistoryDropdownOpen, setIsHistoryDropdownOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatProcessing, setIsChatProcessing] = useState(false);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  // const [aiInput, setAiInput] = useState(''); // MOVED
+  // const [isReverseMenuOpen, setIsReverseMenuOpen] = useState(false); // MOVED
 
-  // History Dropdown state
-  const [isHistoryDropdownOpen, setIsHistoryDropdownOpen] = useState(false);
-  const [hoveredHistoryIndex, setHoveredHistoryIndex] = useState<number | null>(null);
+  // Refine Mode State MOVED TO PROMPT STUDIO
+  // const [selectedRefineMode, setSelectedRefineMode] = useState<RefineModeConfig>('optimize-auto');
+  // const [isRefineMenuOpen, setIsRefineMenuOpen] = useState(false);
 
+  // const [refineMenuPosition, setRefineMenuPosition] = useState({ top: 0, left: 0 });
+  // const refineButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Update Refine menu position MOVED
 
-  // State for Reverse Mode selection (4 options)
-
+  // State for Reverse Mode selection (4 options) - MOVED TO PROMPT STUDIO
+  const [selectedReverseMode, setSelectedReverseMode] = useState<ReverseModeConfig>('quick-auto');
 
   // Ref to track auto-generation for Full Pipeline
   const autoGenerateAfterPipeline = useRef(false);
@@ -137,8 +174,8 @@ const App: React.FC = () => {
   } = useResizablePanel(mainRef, {
     storageKey: 'unimage_left_panel_width',
     defaultValue: 50,
-    min: 25,
-    max: 75,
+    min: 15,
+    max: 80,
     isPercentage: true,
     direction: 'left'
   });
@@ -150,15 +187,15 @@ const App: React.FC = () => {
     setIsDragging: setIsDraggingRightDivider
   } = useResizablePanel(mainRef, {
     storageKey: 'unimage_right_panel_width',
-    defaultValue: 320,
-    min: 200,
-    max: 500,
+    defaultValue: 500,
+    min: 500,
+    max: 800,
     isPercentage: false,
     direction: 'right'
   });
   // Removed isGlobalDragging state as we use localized drop zones now
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const analyzeAbortRef = useRef<AbortController | null>(null);
+  // const [isAnalyzing, setIsAnalyzing] = useState(false); // MOVED - unused here
+  // const analyzeAbortRef = useRef<AbortController | null>(null); // MOVED - unused here
 
   // Synchronized image zoom state
   const [imageZoom, setImageZoom] = useState({ scale: 1, panX: 0, panY: 0 });
@@ -207,10 +244,10 @@ const App: React.FC = () => {
   const [showProgressView, setShowProgressView] = useState(false);
   const { soundEnabled, toggleSound, soundService } = useSoundEffects();
   const { promptHistory, pushPromptHistory, clearPromptHistory } = usePromptHistory();
-  const [reverseMode, setReverseMode] = useState<'full' | 'quick'>('quick'); // 'full' = 完整4步骤, 'quick' = 单步快速逆向
-  /* State migrated to PromptStudio */
-
-  const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1'); // 选择的比例
+  // const [reverseMode, setReverseMode] = useState<'full' | 'quick'>('quick'); // Deprecated/Moved
+  // const [generateCount, setGenerateCount] = useState(1); // MOVED
+  // const [isGenerateMenuOpen, setIsGenerateMenuOpen] = useState(false); // MOVED
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState('9:16'); // 选择的比例
 
   const { handleGenerateImage } = useImageGeneration({
     state,
@@ -455,14 +492,14 @@ const App: React.FC = () => {
 
 
   // Helper to execute the currently selected Reverse Mode
-  const executeReverseAction = (mode: ReverseModeConfig) => {
-    if (mode === 'quick-auto') {
+  const executeReverseAction = () => {
+    if (selectedReverseMode === 'quick-auto') {
       handleQuickReverse(true);
-    } else if (mode === 'quick-prompt') {
+    } else if (selectedReverseMode === 'quick-prompt') {
       handleQuickReverse(false);
     } else {
       // Full Reverse Modes
-      const autoGenerate = mode === 'full-auto';
+      const autoGenerate = selectedReverseMode === 'full-auto';
 
       const hasContent = state.results[AgentRole.AUDITOR]?.content?.trim() ||
         state.results[AgentRole.DESCRIPTOR]?.content?.trim() ||
@@ -483,7 +520,16 @@ const App: React.FC = () => {
     }
   };
 
-
+  // Helper to get button label
+  const getReverseButtonLabel = () => {
+    switch (selectedReverseMode) {
+      case 'quick-prompt': return '快速逆向-提示词';
+      case 'full-prompt': return '完整逆向-提示词';
+      case 'full-auto': return '完整逆向';
+      case 'quick-auto': return '快速逆向';
+      default: return 'Reverse';
+    }
+  };
 
   const handleRunQA = async () => {
     if (!state.image || !state.generatedImage || state.isRefining) return;
@@ -819,75 +865,6 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleSwitchApiMode = () => {
-    switchApiMode();
-    // Toast is handled in the hook or we can add one here
-    // showToast(`Switched API Mode`, 'success');
-  };
-
-  const renderTabContent = () => {
-    if (activeTab === 'STUDIO') {
-      return (
-        <PromptStudio
-          state={state}
-          setState={setState}
-          pipelineProgress={pipelineProgress}
-          showProgressView={showProgressView}
-          isPipelineRunning={isPipelineRunning.current}
-          handleFileSelected={handleFileSelected}
-          handleAnalyzeLayout={handleAnalyzeLayout}
-          handleTranslatePrompt={handleTranslatePrompt}
-          handleGenerateImage={handleGenerateImage}
-          handleStartPipeline={handleStartPipeline}
-          executeReverseAction={executeReverseAction}
-          handleChatSendMessage={handleChatSendMessage}
-          setIsChatDrawerOpen={setIsChatDrawerOpen}
-          isChatDrawerOpen={isChatDrawerOpen}
-          isChatProcessing={isChatProcessing}
-          setFullscreenImg={setFullscreenImg}
-          handleStopGeneration={handleStopGeneration}
-          activeModelName={activeModelName}
-          apiMode={apiMode}
-          handleSetApiMode={(mode) => {
-            setApiMode(mode);
-            showToast(`已切换到 ${mode} 模式`, 'success');
-          }}
-          is4K={is4K}
-          setIs4K={setIs4K}
-          selectedAspectRatio={selectedAspectRatio}
-          setSelectedAspectRatio={setSelectedAspectRatio}
-          resetPipeline={resetPipeline}
-          setShowProgressView={setShowProgressView}
-          showToast={showToast}
-        />
-      );
-    }
-    // Agent tabs (AUDITOR, DESCRIPTOR, ARCHITECT)
-    return (
-      <div className="h-full overflow-y-auto p-4 custom-scrollbar">
-        <AgentCard
-          config={AGENTS[activeTab as AgentRole]}
-          result={state.results[activeTab as AgentRole]}
-          isActive={state.activeRole === activeTab}
-          isPending={!state.results[activeTab as AgentRole]?.content}
-          onRegenerate={() => handleRegenerateAgent(activeTab as AgentRole)}
-          onContentChange={(content) => setState(prev => ({
-            ...prev,
-            results: { ...prev.results, [activeTab]: { ...prev.results[activeTab as AgentRole], content } }
-          }))}
-          onCopy={() => {
-            const content = state.results[activeTab as AgentRole]?.content;
-            if (content) {
-              navigator.clipboard.writeText(content);
-              showToast('已复制', 'success');
-            }
-          }}
-          onStartPipeline={activeTab === AgentRole.AUDITOR ? handleStartPipeline : undefined}
-        />
-      </div>
-    );
-  };
-
   const handleGalleryEdit = (index: number) => {
     loadHistoryItem(index);
     setIsGalleryOpen(false);
@@ -1039,264 +1016,87 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      <main ref={mainRef} className={`fixed top-24 bottom-28 left-8 right-8 max-w-[1920px] mx-auto flex gap-0 z-0 ${(isDraggingDivider || isDraggingRightDivider) ? 'select-none' : ''}`}>
-        {/* Left Panel: Assets & References */}
-        <div style={{ width: `${leftPanelWidth}%` }} className="flex flex-col h-full bg-stone-900 rounded-xl border border-stone-800 overflow-hidden shadow-sm">
-          <PanelHeader title={t('panel.visualAssets')}>
-            <div className="flex items-center gap-2">
-              {state.generatedImages.length > 0 && (
-                <>
-                  <div className="flex items-center gap-2 mr-2 border-r border-stone-800 pr-3">
-                    <span className={`text-[9px] font-bold uppercase transition-colors ${isComparisonMode ? 'text-orange-500' : 'text-stone-500'}`}>Compare</span>
-                    <button
-                      onClick={() => setIsComparisonMode(!isComparisonMode)}
-                      className={`w-7 h-4 rounded-full transition-colors flex items-center p-0.5 ${isComparisonMode ? 'bg-orange-500' : 'bg-stone-800 hover:bg-stone-700'}`}
-                    >
-                      <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${isComparisonMode ? 'translate-x-3' : 'translate-x-0'}`} />
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => handleDownloadHD(state.selectedHistoryIndex)}
-                    className="p-1.5 text-stone-500 hover:text-emerald-400 transition-colors rounded-lg hover:bg-emerald-900/20"
-                    title="Download HD"
-                  >
-                    <Icons.Download size={14} />
-                  </button>
-                </>
-              )}
-              <button
-                onClick={handleReset}
-                className="p-1.5 text-stone-500 hover:text-rose-400 transition-colors rounded-lg hover:bg-rose-900/20"
-                title="New Task"
-              >
-                <Icons.Plus size={14} />
-              </button>
-            </div>
-          </PanelHeader>
-
-          <div
-            className={`flex-1 min-h-0 relative flex flex-col ${isDraggingNewImage ? 'ring-2 ring-orange-500 ring-inset' : ''}`}
-            onDragOver={(e) => {
-              if (displayImage) {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsDraggingNewImage(true);
-              }
-            }}
-            onDragLeave={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDraggingNewImage(false);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDraggingNewImage(false);
-
-              if (!displayImage) return;
-
-              const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
-              if (files.length === 0) return;
-
-              const file = files[0];
-              if (file.size > 20 * 1024 * 1024) {
-                showToast(t('toast.fileTooLarge'), 'error');
-                return;
-              }
-
-              const reader = new FileReader();
-              reader.onload = (ev) => {
-                const base64String = ev.target?.result as string;
-                const cleanBase64 = base64String.split(',')[1];
-                const mimeType = file.type;
-
-                // Calculate aspect ratio
-                if (file.type.startsWith('image/')) {
-                  // Try to extract prompt regardless of file type (since browser mime detection can be tricky)
-                  const extracted = extractPromptFromPng(cleanBase64);
-
-                  const img = new Image();
-                  img.onload = () => {
-                    const ratio = img.naturalWidth / img.naturalHeight;
-                    const ratios = [
-                      { id: "1:1", value: 1.0 },
-                      { id: "3:4", value: 0.75 },
-                      { id: "4:3", value: 1.333 },
-                      { id: "9:16", value: 0.5625 },
-                      { id: "16:9", value: 1.777 }
-                    ];
-                    const closest = ratios.reduce((prev, curr) =>
-                      Math.abs(curr.value - ratio) < Math.abs(prev.value - ratio) ? curr : prev
-                    );
-                    handleFileSelected(cleanBase64, closest.id, mimeType, undefined, extracted || undefined);
-                    showToast(t('toast.newImageLoaded'), 'success');
-                  };
-                  img.src = base64String;
-                } else {
-                  handleFileSelected(cleanBase64, '16:9', mimeType);
-                  showToast(t('toast.newVideoLoaded'), 'success');
-                }
-              };
-              reader.readAsDataURL(file);
-            }}
-          >
-            {/* Drag overlay */}
-            {isDraggingNewImage && displayImage && (
-              <div className="absolute inset-0 z-50 bg-orange-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-                <div className="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-xl">
-                  <Icons.Upload size={18} />
-                  拖放以开始新的逆向
-                </div>
-              </div>
-            )}
-
-            {!displayImage && !(state.generatedImages.length > 0 && state.selectedHistoryIndex >= 0) ? (
-              <ImageUploader key={uploaderKey} onImageSelected={handleFileSelected} disabled={state.isProcessing} />
-            ) : (
-              <div className="w-full h-full flex flex-col animate-in fade-in duration-500">
-                {state.generatedImages.length > 0 && state.selectedHistoryIndex >= 0 ? (
-                  displayImage && isComparisonMode ? (
-                    <ImageComparisonSlider
-                      beforeImage={displayImage}
-                      afterImage={getOriginalFromHistory(state.history, state.selectedHistoryIndex)}
-                      beforeLabel={displayImage === getImageSrc(state.history[state.selectedHistoryIndex]?.originalImage, state.history[state.selectedHistoryIndex]?.mimeType) ? t('comparison.original') : t('comparison.selected')}
-                      afterLabel={t('comparison.generated')}
-                      className="w-full h-full border-0 rounded-none bg-stone-950/50"
-                      layoutData={state.layoutData}
-                      isAnalyzingLayout={state.isAnalyzingLayout}
-                      onFullscreen={() => { setFullscreenImg(displayImage); setIsFullscreenComparison(true); }}
-                      zoom={imageZoom}
-                      onZoomChange={handleZoomChange}
-                    />
-                  ) : (
-                    <ImageViewer
-                      src={getOriginalFromHistory(state.history, state.selectedHistoryIndex)}
-                      alt="Generated Result"
-                      className="w-full h-full border-0 rounded-none bg-stone-950/50"
-                      layoutData={state.layoutData}
-                      isAnalyzingLayout={state.isAnalyzingLayout}
-                      onFullscreen={() => setFullscreenImg(getOriginalFromHistory(state.history, state.selectedHistoryIndex))}
-                      zoom={imageZoom}
-                      onZoomChange={handleZoomChange}
-                    />
-                  )
-                ) : displayImage ? (
-                  <ImageViewer
-                    src={displayImage}
-                    alt="Source"
-                    className="w-full h-full border-0 rounded-none bg-stone-950/50"
-                    layoutData={state.layoutData}
-                    isAnalyzingLayout={state.isAnalyzingLayout}
-                    onFullscreen={() => setFullscreenImg(displayImage)}
-                    zoom={imageZoom}
-                    onZoomChange={handleZoomChange}
-                  />
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Draggable Divider */}
-        <div
-          onMouseDown={() => setIsDraggingDivider(true)}
-          className={`w-2 cursor-col-resize flex items-center justify-center group hover:bg-stone-700/50 transition-colors ${isDraggingDivider ? 'bg-orange-500/30' : ''}`}
-        >
-          <div className={`w-0.5 h-12 rounded-full transition-colors ${isDraggingDivider ? 'bg-orange-500' : 'bg-stone-700 group-hover:bg-stone-500'}`} />
-        </div>
+      <main ref={mainRef} className={`fixed top-20 bottom-28 left-4 right-4 flex gap-0 z-0 overflow-hidden ${(isDraggingDivider || isDraggingRightDivider) ? 'select-none' : ''}`}>
+        {/* Left Panel: Image Display & Divider */}
+        <MainVisualizer
+          width={leftPanelWidth}
+          isDraggingDivider={isDraggingDivider}
+          onResizeStart={() => setIsDraggingDivider(true)}
+          state={state}
+          displayImage={displayImage}
+          isComparisonMode={isComparisonMode}
+          setIsComparisonMode={setIsComparisonMode}
+          imageZoom={imageZoom}
+          handleZoomChange={handleZoomChange}
+          setFullscreenImg={setFullscreenImg}
+          setIsFullscreenComparison={setIsFullscreenComparison}
+          isDraggingNewImage={isDraggingNewImage}
+          setIsDraggingNewImage={setIsDraggingNewImage}
+          uploaderKey={uploaderKey}
+          handleFileSelected={handleFileSelected}
+          handleReset={handleReset}
+          handleDownloadHD={handleDownloadHD}
+          showToast={showToast}
+        />
 
         {/* Right Panel: Agent Workbench */}
-        <div className="flex-1 flex flex-col h-full bg-stone-900 rounded-xl border border-stone-800 shadow-sm overflow-hidden relative">
-          <PanelHeader title="Workbench">
-            <div className="flex items-center bg-stone-800 p-0.5 rounded-lg">
-              {['STUDIO', 'AUDITOR', 'DESCRIPTOR', 'ARCHITECT'].map((tid) => {
-                const isStudio = tid === 'STUDIO';
-                const roleKey = isStudio ? AgentRole.SYNTHESIZER : tid as AgentRole;
-                const iconName = isStudio ? 'PenTool' : AGENTS[roleKey]?.icon;
-                const IconComponent = Icons[iconName as keyof typeof Icons];
-                const result = state.results[roleKey];
-                const currentStepIndex = pipelineProgress?.currentStepIndex ?? -1;
-                const isCurrentStep = pipelineProgress?.steps[currentStepIndex]?.role === roleKey && pipelineProgress.isRunning;
-
-                // Short tab labels
-                const tabLabels: Record<string, string> = {
-                  'STUDIO': 'Studio',
-                  'AUDITOR': '场景',
-                  'DESCRIPTOR': '材质',
-                  'ARCHITECT': '构图'
-                };
-
-                return (
-                  <button
-                    key={tid}
-                    onClick={() => setActiveTab(tid as any)}
-                    className={`relative px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 ${activeTab === tid ? 'bg-stone-600 shadow-sm text-stone-100' : 'text-stone-500 hover:text-stone-300'}`}
-                  >
-                    <div className={isCurrentStep ? 'text-blue-400 animate-pulse' : ''}>
-                      {result?.isStreaming ? <Icons.RefreshCw size={12} className="animate-spin" /> : IconComponent && <IconComponent size={12} />}
-                    </div>
-                    <span className="text-[10px] font-bold uppercase tracking-tight">{tabLabels[tid]}</span>
-                    {result?.isComplete && <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-emerald-500 rounded-full border border-stone-800" />}
-                  </button>
-                );
-              })}
-            </div>
-          </PanelHeader>
-
-          <div className="flex-1 min-h-0 bg-stone-900 relative">
-            {!state.image && activeTab !== 'STUDIO' ? (
-              <div className="h-full flex flex-col items-center justify-center text-stone-700 space-y-4">
-                <Icons.Compass size={48} strokeWidth={1} className="animate-spin duration-10000 opacity-20" />
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-50">{t('chat.uploadImageFirst')}</p>
-              </div>
-            ) : renderTabContent()}
-          </div>
-        </div>
+        <AgentWorkbench
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          state={state}
+          setState={setState}
+          pipelineProgress={pipelineProgress}
+          handleRegenerateAgent={handleRegenerateAgent}
+          studioContent={
+            <PromptStudio
+              state={state}
+              setState={setState}
+              pipelineProgress={pipelineProgress}
+              showProgressView={showProgressView}
+              isPipelineRunning={isPipelineRunning}
+              promptHistory={promptHistory}
+              handleFileSelected={handleFileSelected}
+              handleAnalyzeLayout={handleAnalyzeLayout}
+              handleTranslatePrompt={handleTranslatePrompt}
+              handleGenerateImage={handleGenerateImage}
+              handleStartPipeline={handleStartPipeline}
+              handleQuickReverse={handleQuickReverse}
+              handleRegenerateAgent={handleRegenerateAgent}
+              autoGenerateAfterPipelineRef={autoGenerateAfterPipeline}
+              handleChatSendMessage={handleChatSendMessage}
+              handleSetApiMode={handleSetApiMode}
+              setIsChatDrawerOpen={setIsChatDrawerOpen}
+              isChatDrawerOpen={isChatDrawerOpen}
+              isChatProcessing={isChatProcessing}
+              setFullscreenImg={setFullscreenImg}
+              handleStopGeneration={handleStopGeneration}
+              activeModelName={activeModelName}
+              apiMode={apiMode}
+              is4K={is4K}
+              setIs4K={setIs4K}
+              selectedAspectRatio={selectedAspectRatio}
+              setSelectedAspectRatio={setSelectedAspectRatio}
+              resetPipeline={resetPipeline}
+              setShowProgressView={setShowProgressView}
+              showToast={showToast}
+              isHistoryDropdownOpen={isHistoryDropdownOpen}
+              setIsHistoryDropdownOpen={setIsHistoryDropdownOpen}
+              hoveredHistoryIndex={hoveredHistoryIndex}
+              setHoveredHistoryIndex={setHoveredHistoryIndex}
+            />
+          }
+        />
 
 
         {/* Third Column: Chat Panel (inline, not overlay) */}
-        {isChatDrawerOpen && (
-          <>
-            {/* Draggable Divider for right panel */}
-            <div
-              onMouseDown={() => setIsDraggingRightDivider(true)}
-              className={`w-2 cursor-col-resize flex items-center justify-center group hover:bg-stone-700/50 transition-colors ${isDraggingRightDivider ? 'bg-orange-500/30' : ''}`}
-            >
-              <div className={`w-0.5 h-12 rounded-full transition-colors ${isDraggingRightDivider ? 'bg-orange-500' : 'bg-stone-700 group-hover:bg-stone-500'}`} />
-            </div>
-
-            {/* Chat Column */}
-            <div style={{ width: `${rightPanelWidth}px` }} className="flex-shrink-0 flex flex-col h-full bg-stone-900 rounded-xl border border-stone-800 overflow-hidden shadow-sm">
-              <PanelHeader title="AI 助手">
-                <button
-                  onClick={() => setIsChatDrawerOpen(false)}
-                  className="p-1.5 text-stone-500 hover:text-stone-300 transition-colors rounded-lg hover:bg-stone-800"
-                  title="关闭"
-                >
-                  <Icons.X size={14} />
-                </button>
-              </PanelHeader>
-
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                {chatMessages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-stone-600 space-y-3">
-                    <Icons.Sparkles size={32} strokeWidth={1} />
-                    <p className="text-xs">暂无对话记录</p>
-                  </div>
-                ) : (
-                  chatMessages.map((msg) => (
-                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[90%] rounded-xl px-3 py-2 text-xs ${msg.role === 'user' ? 'bg-stone-700 text-white' : 'bg-stone-800 border border-stone-700 text-stone-200'}`}>
-                        {msg.content}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </>
-        )}
+        <ChatSidebar
+          isOpen={isChatDrawerOpen}
+          onClose={() => setIsChatDrawerOpen(false)}
+          messages={chatMessages}
+          width={rightPanelWidth}
+          onResizeStart={() => setIsDraggingRightDivider(true)}
+          isResizing={isDraggingRightDivider}
+        />
       </main>
 
       {/* Persistence History Bottom Bar */}

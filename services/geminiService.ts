@@ -996,8 +996,19 @@ export async function executeReverseEngineering(
     try {
       return JSON.parse(cleanContent) as ReverseEngineeringResult;
     } catch (parseError) {
-      console.error("JSON Parse Error. Raw content:", content);
-      throw new Error("Failed to parse AI response as JSON. Content: " + content.substring(0, 100) + "...");
+      console.warn("JSON Parse Error. Falling back to raw text handling. Raw content:", content.substring(0, 100) + "...");
+
+      // Fallback for non-JSON output (custom Markdown prompts)
+      return {
+        image_analysis: {
+          technical_specs: "N/A (Raw Output)",
+          environment: "N/A (Raw Output)",
+          lighting: "N/A (Raw Output)",
+          colors: "N/A (Raw Output)",
+          subject: "N/A (Raw Output)"
+        },
+        generated_prompt: content // Treat the entire response as the prompt/analysis
+      } as ReverseEngineeringResult;
     }
   } catch (error: any) {
     // Reduce noise: Warn for anticipated API errors, Error for unexpected crashes

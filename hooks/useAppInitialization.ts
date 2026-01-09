@@ -27,7 +27,7 @@ export const useAppInitialization = (
                 ]);
 
                 // Limit history to prevent OOM
-                const limitedHist = hist.slice(0, 50);
+                const limitedHist = hist.slice(0, 500);
                 let generatedImages: string[] = [];
                 let mergedState: Partial<AppState> = { history: limitedHist };
 
@@ -37,7 +37,7 @@ export const useAppInitialization = (
                         .filter(item => item.generatedImage)
                         .map(item => item.generatedImageThumb || item.generatedImage as string);
 
-                    generatedImages = imagesFromHistory.length > 0 ? imagesFromHistory : (cached.generatedImages || []).slice(0, 50);
+                    generatedImages = imagesFromHistory.length > 0 ? imagesFromHistory : (cached.generatedImages || []).slice(0, 500);
 
                     mergedState = {
                         ...mergedState,

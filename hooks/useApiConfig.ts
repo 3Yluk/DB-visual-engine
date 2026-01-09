@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { configureClient, getModeDefaultModels } from '../services/geminiService';
+import { configureClient, getModeDefaultModels, configureModels } from '../services/geminiService';
 
 export const useApiConfig = () => {
     const [apiMode, setApiModeState] = useState<'official' | 'custom' | 'volcengine'>('custom');
@@ -20,16 +20,36 @@ export const useApiConfig = () => {
 
         // Update active model name based on mode defaults or stored values
         const modeDefaults = getModeDefaultModels(mode);
+
+        // CRITICAL FIX: Also update the global modelConfig in geminiService
+        // Otherwise useImageGeneration will use the stale model ID (e.g. seedream) with the new client
+        const storedModels = {
+            reasoning: localStorage.getItem(`unimage_model_reasoning_${mode}`) || localStorage.getItem('unimage_model_reasoning') || modeDefaults.reasoning,
+            fast: localStorage.getItem(`unimage_model_fast_${mode}`) || localStorage.getItem('unimage_model_fast') || modeDefaults.fast,
+            image: localStorage.getItem(`unimage_model_image_${mode}`) || localStorage.getItem('unimage_model_image') || modeDefaults.image
+        };
+
+        // Sanitize logic: If we are in Volcengine, force Volcengine defaults if stored is Google
         if (mode === 'volcengine') {
+            if (storedModels.image?.includes('gemini') || storedModels.image?.includes('imagen')) {
+                storedModels.image = modeDefaults.image;
+            }
+            // For UI display
             const storedVision = localStorage.getItem('unimage_model_vision') || 'seed-1-6-250915';
             setActiveModelName(storedVision);
         } else {
-            let f = localStorage.getItem('unimage_model_fast');
-            if (!f || f.includes('seed')) {
-                f = modeDefaults.fast;
+            // If in Google/Custom, ensure we don't use Seedream
+            if (storedModels.image?.includes('seedream') || storedModels.image?.includes('seededit')) {
+                storedModels.image = modeDefaults.image;
             }
-            setActiveModelName(f || modeDefaults.fast);
+            if (storedModels.fast?.includes('seed')) {
+                storedModels.fast = modeDefaults.fast;
+            }
+            setActiveModelName(storedModels.fast || modeDefaults.fast);
         }
+
+        // Apply to backend service
+        configureModels(storedModels);
 
         // Update Key Status
         let storedKey = '';

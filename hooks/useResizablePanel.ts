@@ -16,6 +16,8 @@ interface UseResizablePanelOptions {
     isPercentage?: boolean;
     /** Direction of resize: 'left' = resize from left edge, 'right' = resize from right edge */
     direction?: 'left' | 'right';
+    /** Dynamic max calculator - receives container width, returns max allowed value */
+    dynamicMax?: (containerWidth: number) => number;
 }
 
 interface UseResizablePanelReturn {
@@ -35,7 +37,8 @@ export const useResizablePanel = (
         min,
         max,
         isPercentage = true,
-        direction = 'left'
+        direction = 'left',
+        dynamicMax
     } = options;
 
     const [width, setWidth] = useState(() => {
@@ -69,7 +72,9 @@ export const useResizablePanel = (
                 newWidth = rect.right - e.clientX;
             }
 
-            const clampedWidth = Math.min(max, Math.max(min, newWidth));
+            // Calculate effective max (use dynamicMax if provided)
+            const effectiveMax = dynamicMax ? dynamicMax(rect.width) : max;
+            const clampedWidth = Math.min(effectiveMax, Math.max(min, newWidth));
             setWidth(clampedWidth);
         };
 
@@ -83,7 +88,7 @@ export const useResizablePanel = (
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, containerRef, min, max, isPercentage, direction]);
+    }, [isDragging, containerRef, min, max, isPercentage, direction, dynamicMax]);
 
     return { width, setWidth, isDragging, setIsDragging };
 };

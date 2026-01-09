@@ -10,6 +10,7 @@ import { AppState, AgentRole, TabType, PipelineStepStatus } from '../types';
 import { PIPELINE_ORDER, AGENTS } from '../constants';
 import { streamAgentAnalysis } from '../services/geminiService';
 import { executeReverseSkill } from '../services/chatService';
+import { promptManager } from '../services/promptManager';
 
 interface UseImagePipelineProps {
     state: AppState;
@@ -172,11 +173,25 @@ export const useImagePipeline = ({
         });
 
         try {
-            const { content, suggestions } = await executeReverseSkill(state.image, state.mimeType);
+            // Use the currently selected prompt from PromptStudio (Synthesizer Role)
+            // If no custom version is selected, pass undefined to let service use its default REVERSE_SKILL prompt.
+            // However, the user explicitly wants the dropdown selection to matter.
+            // The dropdown sets AgentRole.SYNTHESIZER active version.
+            const activeSynthesizerPrompt = promptManager.getActivePromptContent(AgentRole.SYNTHESIZER, '');
+            // Only pass if it's not empty? Or should we trust it?
+            // If the user hasn't selected anything, getActivePromptContent returns defaultContent ('').
+            // If it returns '', we should probably NOT override, so the service uses its internal default.
+            const customPrompt = activeSynthesizerPrompt || undefined;
+
+            const { content, suggestions } = await executeReverseSkill(state.image, state.mimeType, customPrompt);
+
+            // Logic Fix: Use the actual prompt (suggestions[0]) for streaming if available,
+            // instead of the analysis report (content). This prevents the "jump" effect.
+            const targetContent = suggestions && suggestions.length > 0 ? suggestions[0] : content;
 
             // 模拟流式更新
             let displayedContent = '';
-            const chunks = content.match(/.{1,20}/g) || []; // 每20字符一个chunk
+            const chunks = targetContent.match(/[\s\S]{1,20}/g) || []; // 每20字符一个chunk
 
             for (let i = 0; i < chunks.length; i++) {
                 displayedContent += chunks[i];
@@ -209,8 +224,8 @@ export const useImagePipeline = ({
                     ...newSteps[0],
                     status: PipelineStepStatus.COMPLETED,
                     progress: 100,
-                    streamingContent: content,
-                    finalContent: content,
+                    streamingContent: targetContent,
+                    finalContent: targetContent,
                     endTime: Date.now()
                 };
                 setProgressDirect({
@@ -222,7 +237,7 @@ export const useImagePipeline = ({
             }
 
             // 使用建议作为提示词
-            const selectedSuggestion = suggestions && suggestions.length > 0 ? suggestions[0] : content;
+            const selectedSuggestion = targetContent;
 
             setState(prev => ({
                 ...prev,

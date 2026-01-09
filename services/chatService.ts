@@ -110,9 +110,11 @@ export async function executeRefineSkill(
 // Execute reverse engineering skill
 export async function executeReverseSkill(
     originalImage: string,
-    mimeType: string
+    mimeType: string,
+    customPrompt?: string
 ): Promise<{ content: string; suggestions: string[] }> {
-    const activePrompt = promptManager.getActivePromptContent(REVERSE_SKILL_ID, SINGLE_STEP_REVERSE_PROMPT);
+    // Priority: Custom Override > Active Reverse Skill Prompt > Default Constant
+    const activePrompt = customPrompt || promptManager.getActivePromptContent(REVERSE_SKILL_ID, SINGLE_STEP_REVERSE_PROMPT);
     const result = await executeReverseEngineering(originalImage, mimeType, activePrompt);
 
     if (!result) {

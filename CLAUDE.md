@@ -2,7 +2,7 @@
 React + Vite + TypeScript + Gemini SDK + Lucide + IDB-Keyval
 
 <directory>
-components/ - UI Components (19 items: Agent/Chat/Image tools)
+components/ - UI Components (23 items: Agent/Chat/Image tools)
 services/ - Core Business Logic (Gemini/History/Sound)
 hooks/ - Custom React Hooks (Pipeline monitoring)
 utils/ - Helper Utilities
